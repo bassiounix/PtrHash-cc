@@ -6,12 +6,15 @@
 #include "bucket_idx.hpp"
 #include "common.hpp"
 #include "enumerate.hpp"
+#include "fastrand.hpp"
 #include "ptr_hash_params.hpp"
 #include "slice.hpp"
+#include "zip.hpp"
 #include <array>
-#include <cassert>
+// #include <cassert>
 #include <cstdlib>
 #include <time.h>
+#include <variant>
 
 template <typename Key = uint64_t, typename BF = Linear,
           typename F = DynamicContainer<uint32_t>, // or Vec<u32>
@@ -30,35 +33,36 @@ public:
                     std::is_same_v<V, std::vector<uint8_t>>,
                 "V must be a byte slice or byte vector");
 
-  PtrHashParams<BF> params_;
-  size_t n_;
-  size_t parts_;
-  size_t shards_;
-  size_t parts_per_shard_;
-  size_t slots_total_;
-  size_t buckets_total_;
-  size_t slots_;
-  size_t buckets_;
-  Rp rem_shards_;
-  Rp rem_parts_;
-  Rb rem_buckets_;
-  Rb rem_buckets_total_;
-  RemSlots rem_slots_;
-  uint64_t seed_;
-  V pilots_;
-  F remap_;
+  mutable PtrHashParams<BF> params_;
+  mutable size_t n_;
+  mutable size_t parts_;
+  mutable size_t shards_;
+  mutable size_t parts_per_shard_;
+  mutable size_t slots_total_;
+  mutable size_t buckets_total_;
+  mutable size_t slots_;
+  mutable size_t buckets_;
+  mutable Rp rem_shards_;
+  mutable Rp rem_parts_;
+  mutable Rb rem_buckets_;
+  mutable Rb rem_buckets_total_;
+  mutable RemSlots rem_slots_;
+  mutable uint64_t seed_;
+  mutable V pilots_;
+  mutable F remap_;
 
-  PtrHash()
+  constexpr PtrHash()
       : n_(0), parts_(0), shards_(0), parts_per_shard_(0), slots_total_(0),
         buckets_total_(0), slots_(0), buckets_(0), rem_shards_(FastReduce{0}),
         rem_parts_(FastReduce{0}), rem_buckets_(FastReduce{0}),
         rem_buckets_total_(FastReduce{0}), rem_slots_(RemSlots{1}), seed_(0),
         pilots_(V()), remap_(F()) {}
-  PtrHash(PtrHashParams<BF> params_, size_t n_, size_t parts_, size_t shards_,
-          size_t parts_per_shard_, size_t slots_total_, size_t buckets_total_,
-          size_t slots_, size_t buckets_, Rp rem_shards_, Rp rem_parts_,
-          Rb rem_buckets_, Rb rem_buckets_total_, RemSlots rem_slots_,
-          uint64_t seed_, V pilots_, F remap_)
+  constexpr PtrHash(PtrHashParams<BF> params_, size_t n_, size_t parts_,
+                    size_t shards_, size_t parts_per_shard_,
+                    size_t slots_total_, size_t buckets_total_, size_t slots_,
+                    size_t buckets_, Rp rem_shards_, Rp rem_parts_,
+                    Rb rem_buckets_, Rb rem_buckets_total_, RemSlots rem_slots_,
+                    uint64_t seed_, V pilots_, F remap_)
       : params_(params_), n_(n_), parts_(parts_), shards_(shards_),
         parts_per_shard_(parts_per_shard_), slots_total_(slots_total_),
         buckets_total_(buckets_total_), slots_(slots_), buckets_(buckets_),
@@ -67,23 +71,23 @@ public:
         rem_slots_(rem_slots_), seed_(seed_), pilots_(pilots_), remap_(remap_) {
   }
 
-  PtrHash(const PtrHash &) = default;
-  PtrHash(PtrHash &&) = default;
+  constexpr PtrHash(const PtrHash &) = default;
+  constexpr PtrHash(PtrHash &&) = default;
 
-  static PtrHash New(Slice<Key> keys,
-                     PtrHashParams<BF> params = PtrHashParams<BF>()) {
-    PtrHash ptr_hash = PtrHash::init(keys.size(), params);
-    if (!ptr_hash.compute_pilots(keys)) {
-      fprintf(stderr, "Unable to construct PtrHash after 10 tries. Try "
-                      "using a better hash or decreasing lambda.\n");
-      exit(1);
+  constexpr PtrHash(Slice<Key> keys,
+                    PtrHashParams<BF> params = PtrHashParams<BF>())
+      : PtrHash(this->init(keys.size(), params)) {
+    if (!this->compute_pilots(keys)) {
+      // fprintf(stderr, "Unable to construct PtrHash after 10 tries. Try "
+      //                 "using a better hash or decreasing lambda.\n");
+      std::abort();
     }
-    return ptr_hash;
   }
 
-  PtrHash &operator=(const PtrHash &) = default;
+  constexpr PtrHash &operator=(const PtrHash &) = default;
+  constexpr PtrHash &operator=(PtrHash &&) = default;
 
-  inline size_t index(Key key) {
+  inline constexpr size_t index(Key key) const {
     auto slot = this->index_no_remap(key);
 
     if (slot < this->n_) {
@@ -93,22 +97,22 @@ public:
     return this->remap_.index(slot - this->n_);
   }
 
-  inline size_t index_no_remap(Key key) {
-    auto const hx = this->hash_key(key);
-    auto const b = this->bucket(hx);
-    auto const pilot = this->pilots_[b];
+  inline constexpr size_t index_no_remap(Key key) const {
+    auto hx = this->hash_key(key);
+    auto b = this->bucket(hx);
+    auto pilot = this->pilots_[b];
     return this->slot(hx, pilot);
   }
 
-  size_t slot(typename Hx::H hx, uint64_t pilot) {
+  constexpr size_t slot(typename Hx::H hx, uint64_t pilot) const {
     return (this->part(hx) * this->slots_) + this->slot_in_part(hx, pilot);
   }
 
-  size_t slot_in_part(typename Hx::H hx, Pilot pilot) {
+  constexpr size_t slot_in_part(typename Hx::H hx, Pilot pilot) const {
     return this->slot_in_part_hp(hx, this->hash_pilot(pilot));
   }
 
-  static PtrHash init(size_t n, PtrHashParams<BF> &params) {
+  constexpr PtrHash init(size_t n, PtrHashParams<BF> &params) const {
     size_t shards = (params.single_part == true) ? 1
                     : (params.sharding.type == ShardingType::None)
                         ? 1
@@ -145,7 +149,8 @@ public:
                    0, V(), F());
   }
 
-  std::optional<BucketStats> compute_pilots(Slice<Key> keys) {
+  constexpr std::optional<std::monostate>
+  compute_pilots(Slice<Key> keys) const {
     std::vector<std::vector<bool>> taken{};
     std::vector<uint8_t> pilots{};
 
@@ -153,7 +158,6 @@ public:
     constexpr size_t max_tries = 10;
 
     srand(31415);
-    std::optional<BucketStats> rstats = std::nullopt;
     while (true) {
       bool contd = false;
       tries += 1;
@@ -161,7 +165,7 @@ public:
         return std::nullopt;
       }
 
-      this->seed_ = rand();
+      this->seed_ = rand() * 69;
       pilots.clear();
       utility::resize_with(pilots, this->buckets_total_, []() { return 0; });
       for (auto &t : taken) {
@@ -176,7 +180,6 @@ public:
           pilots, std::max(this->buckets_ * this->parts_per_shard_,
                            static_cast<size_t>(1)));
       auto shard_taken = utility::chunks_mut(taken, this->parts_per_shard_);
-      BucketStats stats;
 
       for (size_t shard = 0;
            shard < std::min({shard_hashes.size(), shard_pilots.size(),
@@ -194,13 +197,10 @@ public:
 
         auto &[new_hashes, part_starts] = sorted_parts.value();
 
-        if (auto shard_stats =
-                this->build_shard(shard, new_hashes,
-                                  Slice(part_starts.data(), part_starts.size()),
-                                  Slice(pilots.data(), pilots.size()),
-                                  Slice(taken.data(), taken.size()))) {
-          stats.merge(shard_stats.value());
-        } else {
+        if (!this->build_shard(shard, new_hashes,
+                               Slice(part_starts.data(), part_starts.size()),
+                               Slice(pilots.data(), pilots.size()),
+                               Slice(taken.data(), taken.size()))) {
           contd = true;
           break;
         }
@@ -214,25 +214,25 @@ public:
       if (!remap) {
         continue;
       }
-      rstats = stats;
       break;
     }
     this->pilots_ = pilots;
-    return rstats;
+
+    return std::monostate{};
   }
 
-  std::expected<std::monostate, std::nullopt_t>
-  remap_free_slots(std::vector<std::vector<bool>> &taken) {
+  constexpr std::expected<std::monostate, std::nullopt_t>
+  remap_free_slots(std::vector<std::vector<bool>> &taken) const {
     auto val =
         utility::map(taken, [&](auto &t) { return utility::count_zeros(t); });
     if (utility::sum(Slice(val.data(), val.size())) !=
         this->slots_total_ - this->n_) {
 
-      fprintf(
-          stderr,
-          "Not the right number of free slots left!\n total slots %zu - n %zu",
-          this->slots_total_, this->n_);
-      assert(0);
+      // fprintf(
+      //     stderr,
+      //     "Not the right number of free slots left!\n total slots %zu - n %zu",
+      //     this->slots_total_, this->n_);
+      // assert(0);
     }
 
     if (!this->params_.remap || this->slots_total_ == this->n_) {
@@ -261,15 +261,11 @@ public:
       }
       v.push_back(i);
     }
-    auto x = F::try_new(Slice(v.data(), v.size()));
-    if (!x) {
-      return std::unexpected(std::nullopt);
-    }
-    this->remap_ = x.value();
+    this->remap_ = F::try_new(Slice(v.data(), v.size()));
     return std::monostate{};
   }
 
-  auto shards(Slice<Key> keys) {
+  constexpr auto shards(Slice<Key> keys) const {
     switch (this->params_.sharding.type) {
     case ShardingType::None:
       return this->no_sharding(keys);
@@ -284,12 +280,13 @@ public:
     }
   }
 
-  std::vector<std::vector<typename Hx::H>> no_sharding(Slice<Key> keys) {
+  constexpr std::vector<std::vector<typename Hx::H>>
+  no_sharding(Slice<Key> keys) const {
     return {utility::map(keys, [&](Key key) { return this->hash_key(key); })};
   }
 
-  std::vector<std::vector<typename Hx::H>>
-  shard_keys_in_memory(Slice<Key> keys) {
+  constexpr std::vector<std::vector<typename Hx::H>>
+  shard_keys_in_memory(Slice<Key> keys) const {
     return utility::map(utility::Range(this->shards_), [&](size_t shard) {
       std::vector<typename Hx::H> res =
           utility::map(keys, [&](auto key) -> typename Hx::H {
@@ -301,12 +298,17 @@ public:
     });
   }
 
-  typename Hx::H hash_key(Key x) { return Hx::hash(x, this->seed_); }
+  constexpr typename Hx::H hash_key(Key x) const {
+    return Hx::hash(x, this->seed_);
+  }
 
-  size_t shard(typename Hx::H hx) { return rem_shards_.reduce(high(hx)); }
+  constexpr size_t shard(typename Hx::H hx) const {
+    return rem_shards_.reduce(high(hx));
+  }
 
-  std::optional<std::pair<Slice<typename Hx::H>, std::vector<uint32_t>>>
-  sort_parts(size_t shard, Slice<typename Hx::H> hashes) {
+  constexpr std::optional<
+      std::pair<Slice<typename Hx::H>, std::vector<uint32_t>>>
+  sort_parts(size_t shard, Slice<typename Hx::H> hashes) const {
     std::sort(hashes.begin(), hashes.end());
 
     bool distinct = true;
@@ -323,8 +325,8 @@ public:
     }
 
     if (!hashes.is_empty()) {
-      assert(shard * this->parts_per_shard_ <= this->part(hashes[0]));
-      assert(this->part(*hashes.last()) < (shard + 1) * this->parts_per_shard_);
+      // assert(shard * this->parts_per_shard_ <= this->part(hashes[0]));
+      // assert(this->part(hashes.last()) < (shard + 1) * this->parts_per_shard_);
     }
 
     std::vector<uint32_t> part_starts(this->parts_per_shard_ + 1, 0);
@@ -358,14 +360,12 @@ public:
     return std::pair(hashes, part_starts);
   }
 
-  std::optional<BucketStats> build_shard(size_t shard,
-                                         Slice<typename Hx::H> hashes,
-                                         Slice<uint32_t> part_starts,
-                                         Slice<uint8_t> pilots,
-                                         Slice<std::vector<bool>> taken) {
+  constexpr std::optional<std::monostate>
+  build_shard(size_t shard, Slice<typename Hx::H> hashes,
+              Slice<uint32_t> part_starts, Slice<uint8_t> pilots,
+              Slice<std::vector<bool>> taken) const {
     auto pilots_per_part = utility::chunks_exact_mut(pilots, this->buckets_);
     auto parts_done = shard * this->parts_per_shard_;
-    BucketStats stats;
     auto ok = utility::try_for_each(
         enumerate(zip(pilots_per_part, taken)),
         [&](auto e) -> std::optional<std::monostate> {
@@ -374,7 +374,7 @@ public:
           auto part = shard * this->parts_per_shard_ + part_in_shard;
           hashes = hashes.range(part_starts[part_in_shard],
                                 part_starts[part_in_shard + 1]);
-          auto _cnt = this->build_part(part, hashes, pilots, taken, stats);
+          auto _cnt = this->build_part(part, hashes, pilots, taken);
           if (!_cnt) {
             return std::nullopt;
           }
@@ -386,13 +386,14 @@ public:
       return std::nullopt;
     }
 
-    assert(parts_done == (shard + 1) * this->parts_per_shard_);
-    return stats;
+    // assert(parts_done == (shard + 1) * this->parts_per_shard_);
+    return std::monostate{};
   }
 
-  std::optional<size_t> build_part(size_t part, Slice<typename Hx::H> hashes,
-                                   ByteSlice pilots, std::vector<bool> &taken,
-                                   BucketStats &_stats) {
+  constexpr std::optional<size_t> build_part(size_t part,
+                                             Slice<typename Hx::H> hashes,
+                                             Slice<uint8_t> pilots,
+                                             std::vector<bool> &taken) const {
     auto [starts, bucket_order] = this->sort_buckets(part, hashes);
     auto kmax = 256;
     std::vector<BucketIdx> slots(this->slots_, BucketIdx::NONE);
@@ -421,6 +422,9 @@ public:
          BucketIdx::NONE, BucketIdx::NONE, BucketIdx::NONE, BucketIdx::NONE,
          BucketIdx::NONE, BucketIdx::NONE, BucketIdx::NONE, BucketIdx::NONE}};
     auto total_evictions = 0;
+
+    constexpr auto rng = fastrand::Rng();
+
     for (auto [_, new_b] : enumerate(bucket_order)) {
       auto const new_bucket = hashes.range(starts[new_b], starts[new_b + one]);
       if (new_bucket.is_empty()) {
@@ -436,22 +440,22 @@ public:
       recent[0] = new_b;
 
       std::pair best = {std::numeric_limits<size_t>::max(),
-        std::numeric_limits<uint64_t>::max()};
+                        std::numeric_limits<uint64_t>::max()};
 
-        srand(time(0));
-        while (auto pair_opt = stack.pop()) {
-          bool continue_outer_loop = false;
-          auto &[b_len, b] = *pair_opt;
-          if (evictions > this->slots_ && utility::is_power_of_two((evictions))) {
-            if (evictions >= 10 * this->slots_) {
-              return std::nullopt;
-            }
+      while (!stack.empty()) {
+        auto pair_opt = stack.pop();
+        bool continue_outer_loop = false;
+        auto &[b_len, b] = pair_opt;
+        if (evictions > this->slots_ && utility::is_power_of_two((evictions))) {
+          if (evictions >= 10 * this->slots_) {
+            return std::nullopt;
           }
-          auto const bucket = hashes.range(starts[b], starts[b + one]);
-          auto const b_slots = [&](PilotHash hp) {
-            return utility::map(bucket, [&](typename Hx::H hx) {
-              return this->slot_in_part_hp(hx, hp);
-            });
+        }
+        auto const bucket = hashes.range(starts[b], starts[b + one]);
+        auto const b_slots = [&](PilotHash hp) {
+          return utility::map(bucket, [&](typename Hx::H hx) {
+            return this->slot_in_part_hp(hx, hp);
+          });
         };
         if (auto fpilot = this->find_pilot(kmax, bucket, taken)) {
           auto &[p, hp] = fpilot.value();
@@ -461,7 +465,7 @@ public:
           }
           continue;
         }
-        uint64_t p0 = rand() % 256;
+        uint64_t p0 = rng.u8();
         for (auto delat : utility::Range(kmax)) {
           bool build_part_loop_continue_inner_continue = false;
           auto const p = (p0 + delat) % kmax;
@@ -513,12 +517,13 @@ public:
           return std::nullopt;
         }
         auto const &[_collision_score, p] = best;
-        pilots[b] = p;
+        // pilots[b] = p;
+        pilots.set_at(b, p);
         auto const hp = this->hash_pilot(p);
         for (auto &slot : b_slots(hp)) {
           auto const b2 = slots[slot];
           if (b2.is_some()) {
-            assert(b2 != b);
+            // assert(b2 != b);
             stack.push({bucket_len(b2), b2});
             evictions++;
             for (auto &p2 : slots_for_bucket(b2, pilots[b2])) {
@@ -540,9 +545,9 @@ public:
     return total_evictions;
   }
 
-  std::optional<std::pair<Pilot, PilotHash>>
+  constexpr std::optional<std::pair<Pilot, PilotHash>>
   find_pilot(uint64_t kmax, Slice<typename Hx::H> bucket,
-             std::vector<bool> &taken) {
+             std::vector<bool> &taken) const {
     switch (bucket.size()) {
     case 1:
       return this->find_pilot_array<1>(kmax, bucket, taken);
@@ -566,17 +571,17 @@ public:
   }
 
   template <const size_t L>
-  std::optional<std::pair<Pilot, PilotHash>>
+  constexpr std::optional<std::pair<Pilot, PilotHash>>
   find_pilot_array(uint64_t kmax, Slice<typename Hx::H> bucket,
-                   std::vector<bool> &taken) {
+                   std::vector<bool> &taken) const {
     auto cpy = bucket;
     cpy.len = L;
     return this->find_pilot_slice(kmax, cpy, taken);
   }
 
-  inline std::optional<std::pair<Pilot, PilotHash>>
+  inline constexpr std::optional<std::pair<Pilot, PilotHash>>
   find_pilot_slice(uint64_t kmax, Slice<typename Hx::H> bucket,
-                   std::vector<bool> &taken) {
+                   std::vector<bool> &taken) const {
     auto const r = bucket.size() / 4 * 4;
     for (auto p : utility::Range(kmax)) {
       bool find_pilot_continue = false;
@@ -594,7 +599,6 @@ public:
         }};
         for (auto bad : checks) {
           if (bad) {
-            // TODO: find another way to continue the outer loop
             find_pilot_continue = true;
             break;
           }
@@ -621,8 +625,8 @@ public:
     return std::nullopt;
   }
 
-  bool try_take_pilot(Slice<typename Hx::H> bucket, PilotHash hp,
-                      std::vector<bool> &taken) {
+  constexpr bool try_take_pilot(Slice<typename Hx::H> bucket, PilotHash hp,
+                                std::vector<bool> &taken) const {
     for (auto [i, hx] : enumerate(bucket)) {
       auto const slot = this->slot_in_part_hp(hx, hp);
       if (taken[slot]) {
@@ -636,16 +640,16 @@ public:
     return true;
   }
 
-  PilotHash hash_pilot(Pilot p) {
+  constexpr PilotHash hash_pilot(Pilot p) const {
     return utility::wrapping_mul(utility::C, p ^ this->seed_);
   }
 
-  size_t slot_in_part_hp(typename Hx::H hx, PilotHash hp) {
+  constexpr size_t slot_in_part_hp(typename Hx::H hx, PilotHash hp) const {
     return this->rem_slots_.reduce(low(hx) ^ hp);
   }
 
-  std::pair<std::vector<uint32_t>, std::vector<BucketIdx>>
-  sort_buckets(size_t part, Slice<typename Hx::H> hashes) {
+  constexpr std::pair<std::vector<uint32_t>, std::vector<BucketIdx>>
+  sort_buckets(size_t part, Slice<typename Hx::H> hashes) const {
     std::vector<uint32_t> bucket_starts;
     bucket_starts.reserve(this->buckets_ + 1);
     std::vector<BucketIdx> order(this->buckets_, BucketIdx::NONE);
@@ -669,7 +673,7 @@ public:
       bucket_starts.push_back(end);
     }
 
-    assert(end == hashes.size());
+    // assert(end == hashes.size());
 
     auto max_bucket_size = bucket_len_cnt.size() - 1;
     // if (false) {
@@ -695,9 +699,11 @@ public:
     return {bucket_starts, order};
   }
 
-  size_t part(typename Hx::H hx) { return this->rem_parts_.reduce(high(hx)); }
+  constexpr size_t part(typename Hx::H hx) const {
+    return this->rem_parts_.reduce(high(hx));
+  }
 
-  size_t bucket_in_part(uint64_t x) {
+  constexpr size_t bucket_in_part(uint64_t x) const {
     if (BF::LINEAR) {
       return this->rem_buckets_.reduce(x);
     } else if (BF::B_OUTPUT) {
@@ -707,7 +713,7 @@ public:
     }
   }
 
-  size_t bucket(typename Hx::H hx) {
+  const size_t bucket(typename Hx::H hx) const {
     if (BF::LINEAR) {
       return this->rem_buckets_total_.reduce(high(hx));
     }

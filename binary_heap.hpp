@@ -2,13 +2,12 @@
 #define BINARY_HEAP_HPP_
 
 #include <vector>
-#include <optional>
 
 template <typename T> class BinaryHeap {
 private:
-  std::vector<T> data;
+  mutable std::vector<T> data;
 
-  void heapify_up(size_t index) {
+  constexpr void heapify_up(size_t index) const {
     while (index > 0) {
       size_t parent = (index - 1) / 2;
       if (data[index] <= data[parent])
@@ -18,7 +17,7 @@ private:
     }
   }
 
-  void heapify_down(size_t index) {
+  constexpr void heapify_down(size_t index) const {
     size_t n = data.size();
     while (true) {
       size_t left = 2 * index + 1;
@@ -39,21 +38,21 @@ private:
   }
 
 public:
-  BinaryHeap() = default;
+  constexpr BinaryHeap() = default;
+  constexpr ~BinaryHeap() = default;
 
-  void push(const T &value) {
+  constexpr void push(const T &value) const {
     data.push_back(value);
     heapify_up(data.size() - 1);
   }
 
-  void push(T &&value) {
+  constexpr void push(T &&value) const {
     data.push_back(std::move(value));
     heapify_up(data.size() - 1);
   }
 
-  std::optional<T> pop() {
-    if (data.empty())
-      return std::nullopt;
+  constexpr T pop() const {
+    // if (data.empty())
     T top = data[0];
     data[0] = data.back();
     data.pop_back();
@@ -62,15 +61,14 @@ public:
     return top;
   }
 
-  std::optional<const T> peek() const {
-    if (data.empty())
-      return std::nullopt;
+  constexpr const T peek() const {
+    // if constexpr (data.empty())
     return data[0];
   }
 
-  size_t size() const { return data.size(); }
+  constexpr size_t size() const { return data.size(); }
 
-  bool empty() const { return data.empty(); }
+  constexpr bool empty() const { return data.empty(); }
 };
 
 #endif  // BINARY_HEAP_HPP_

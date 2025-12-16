@@ -197,7 +197,7 @@ public:
   }
 
   inline void generate_and_set(size_t index) {
-    assert(index < this->results.size());
+    // assert(index < this->results.size());
     this->generate(this->results);
     this->index = index;
   }
@@ -321,7 +321,7 @@ public:
 
   static auto seed_from_u64(uint64_t state = 31415) {
     std::array<uint8_t, 32> seed;
-    for (auto chunk : utility::chunks_exact_mut(seed, 4)) {
+    for (auto chunk : utility::chunks_exact_mut(Slice(seed.data(), 32), 4)) {
       std::memcpy((void *)chunk.data(), pcg32(state).data(), chunk.size());
     }
     return RRNG126(seed);

@@ -20,10 +20,12 @@ template <typename BF> struct PtrHashParams {
   Sharding sharding;
   bool single_part : 1;
 
-  PtrHashParams<Linear>() : PtrHashParams(PtrHashParams::default_fast()) {}
+  constexpr PtrHashParams<Linear>()
+      : PtrHashParams(PtrHashParams::default_fast()) {}
 
-  PtrHashParams(bool remap, double alpha, double lambda, BF bucket_fn,
-                size_t keys_per_shard, Sharding sharding, bool single_part)
+  constexpr PtrHashParams(bool remap, double alpha, double lambda, BF bucket_fn,
+                          size_t keys_per_shard, Sharding sharding,
+                          bool single_part)
       : remap(remap), alpha(alpha), lambda(lambda), bucket_fn(bucket_fn),
         keys_per_shard(keys_per_shard), sharding(sharding),
         single_part(single_part) {}

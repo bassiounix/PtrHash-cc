@@ -7,29 +7,30 @@
 
 class BucketIdx {
 public:
-  uint32_t i_;
+  mutable uint32_t i_;
 
-  operator uint32_t() { return i_; }
-  operator uint32_t() const { return i_; }
+  constexpr BucketIdx() = default;
 
-  BucketIdx(uint32_t i) : i_(i) {}
+  constexpr operator uint32_t() const { return i_; }
 
-  bool operator==(const BucketIdx other) const { return this->i_ == other.i_; }
+  constexpr BucketIdx(uint32_t i) : i_(i) {}
 
-  BucketIdx operator+(size_t rhs) const {
+  constexpr bool operator==(const BucketIdx other) const { return this->i_ == other.i_; }
+
+  constexpr BucketIdx operator+(size_t rhs) const {
     return BucketIdx(this->i_ + static_cast<uint32_t>(rhs));
   }
 
-  BucketIdx operator-(size_t rhs) const {
+  constexpr BucketIdx operator-(size_t rhs) const {
     return BucketIdx(this->i_ - static_cast<uint32_t>(rhs));
   }
 
-  bool operator<(const BucketIdx &other) const { return this->i_ < other.i_; }
-  bool operator>(const BucketIdx &other) const { return this->i_ > other.i_; }
+  constexpr bool operator<(const BucketIdx &other) const { return this->i_ < other.i_; }
+  constexpr bool operator>(const BucketIdx &other) const { return this->i_ > other.i_; }
 
   static constexpr auto NONE = ~(uint32_t)0;
 
-  static std::vector<BucketIdx> range(size_t num_buckets) {
+  static constexpr std::vector<BucketIdx> range(size_t num_buckets) {
     std::vector<BucketIdx> out;
     out.reserve(num_buckets);
 
@@ -39,8 +40,8 @@ public:
     return out;
   }
 
-  bool is_some() const { return this->i_ != ~(uint32_t)0; }
-  bool is_none() const { return this->i_ == ~(uint32_t)0; }
+  constexpr bool is_some() const { return this->i_ != ~(uint32_t)0; }
+  constexpr bool is_none() const { return this->i_ == ~(uint32_t)0; }
 };
 
 #endif // BUCKET_IDX_HPP_

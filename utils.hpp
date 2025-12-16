@@ -1,16 +1,14 @@
 #ifndef UTILS_HPP_
 #define UTILS_HPP_
 
-#include "enumerate.hpp"
 #include "slice.hpp"
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <numeric>
-#include <variant>
 #include <vector>
-#include <array>
 
 namespace utility {
 
@@ -23,13 +21,13 @@ inline static constexpr void prefetch_index(const T *s, std::size_t index) {
   __builtin_prefetch(ptr, /*rw=*/0, /*locality=*/3);
 }
 
-inline uint64_t mul_high(uint64_t a, uint64_t b) {
+inline constexpr uint64_t mul_high(uint64_t a, uint64_t b) {
   return (((__uint128_t)a * (__uint128_t)b) >> 64);
 }
 
-template <typename T> const T div_ceil(T a, T b) {
+template <typename T> constexpr T div_ceil(T a, T b) {
   // works for positive or negative, matches "round toward +∞"
-  assert(b == 0 && "division by zero");
+  // assert(b == 0 && "division by zero");
 
   T q = a / b;
   T r = a % b;
@@ -50,7 +48,7 @@ template <typename T> constexpr bool is_power_of_two_signed(T x) {
   return x > 0 && (x & (x - 1)) == 0;
 }
 
-template <typename T, typename F> auto map(T v, F func) {
+template <typename T, typename F> constexpr auto map(T v, F func) {
   using R = decltype(func(*std::begin(v)));
   std::vector<R> out;
   out.reserve(v.size());
@@ -59,12 +57,13 @@ template <typename T, typename F> auto map(T v, F func) {
   return out;
 }
 
-template <typename T, typename F> void for_each(T v, F func) {
+template <typename T, typename F> constexpr void for_each(T v, F func) {
   for (auto &x : v)
     func(x);
 }
 
-template <typename Iter, typename F> auto try_for_each(Iter &&iter, F &&f) {
+template <typename Iter, typename F>
+constexpr auto try_for_each(Iter &&iter, F &&f) {
   using Ret = decltype(f(*std::begin(iter)));
 
   for (auto &&x : iter) {
@@ -77,7 +76,8 @@ template <typename Iter, typename F> auto try_for_each(Iter &&iter, F &&f) {
   return true;
 }
 
-template <typename T, typename Pred> auto filter(const T &s, Pred pred) {
+template <typename T, typename Pred>
+constexpr auto filter(const T &s, Pred pred) {
   using Elem = std::decay_t<decltype(*std::begin(s))>;
   std::vector<Elem> out;
 
@@ -89,7 +89,7 @@ template <typename T, typename Pred> auto filter(const T &s, Pred pred) {
   return out;
 }
 
-template <typename T> T sum(Slice<T> container) {
+template <typename T> constexpr T sum(Slice<T> container) {
   return std::accumulate(container.begin(), container.end(), 0);
 }
 
@@ -97,38 +97,37 @@ struct Range {
   int start_, end_, step_;
 
   struct Iterator {
-    int value;
+    mutable int value;
     int step;
 
-    int &operator*() { return value; }
-    const int &operator*() const { return value; }
+    constexpr int &operator*() const { return value; }
 
     Iterator &operator++() {
       value += step;
       return *this;
     }
 
-    bool operator!=(const Iterator &other) const {
+    constexpr bool operator!=(const Iterator &other) const {
       return step > 0 ? value < other.value : value > other.value;
     }
   };
 
-  Iterator begin() const { return {start_, step_}; }
-  Iterator end() const { return {end_, step_}; }
+  constexpr Iterator begin() const { return {start_, step_}; }
+  constexpr Iterator end() const { return {end_, step_}; }
 
-  auto rev() const {
+  constexpr auto rev() const {
     int count = (end_ - start_ + step_ - 1) / step_;
     int new_start = start_ + (count - 1) * step_;
     int new_end = start_ - step_;
     return Range(new_start, new_end, -step_);
   }
 
-  Range(int start, int end, int step = 1)
+  constexpr Range(int start, int end, int step = 1)
       : start_(start), end_(end), step_(step) {}
 
-  Range(int end) : start_(0), end_(end), step_(1) {}
+  constexpr Range(int end) : start_(0), end_(end), step_(1) {}
 
-  size_t size() const {
+  constexpr size_t size() const {
     if (step_ > 0)
       return (end_ - start_ + step_ - 1) / step_;
     return (start_ - end_ - step_ - 1) / (-step_);
@@ -136,7 +135,7 @@ struct Range {
 };
 
 template <typename T, typename F>
-void resize_with(std::vector<T> &v, size_t new_size, F gen) {
+constexpr void resize_with(std::vector<T> &v, size_t new_size, F gen) {
   if (new_size < v.size()) {
     v.resize(new_size);
   } else {
@@ -156,84 +155,57 @@ public:
 
     /* ---------- element access ---------- */
 
-    T &operator[](std::size_t i) {
-      return vec[begin_ + i]; // unchecked (matches std::vector::operator[])
-    }
+    constexpr T &operator[](std::size_t i) const { return vec[begin_ + i]; }
 
-    const T &operator[](std::size_t i) const { return vec[begin_ + i]; }
-
-    T &at(std::size_t i) {
+    constexpr T &at(std::size_t i) const {
       // if (begin + i >= end)
       //   throw std::out_of_range("Chunk::at");
       return vec[begin_ + i];
     }
 
-    const T &at(std::size_t i) const {
-      // if (begin + i >= end)
-      //   throw std::out_of_range("Chunk::at");
-      return vec[begin_ + i];
-    }
+    constexpr T &front() const { return vec[begin_]; }
 
-    T &front() { return vec[begin_]; }
-
-    const T &front() const { return vec[begin_]; }
-
-    T &back() { return vec[end_ - 1]; }
-
-    const T &back() const { return vec[end_ - 1]; }
+    constexpr T &back() const { return vec[end_ - 1]; }
 
     /* ---------- capacity ---------- */
 
-    std::size_t size() const noexcept { return end_ - begin_; }
+    constexpr size_t size() const noexcept { return end_ - begin_; }
 
-    bool empty() const noexcept { return begin_ == end_; }
+    constexpr bool empty() const noexcept { return begin_ == end_; }
 
     /* ---------- iterators ---------- */
-
-    auto begin_it() {
+    constexpr auto begin_it() const {
       return vec.begin() + static_cast<std::ptrdiff_t>(begin_);
     }
 
-    auto end_it() { return vec.begin() + static_cast<std::ptrdiff_t>(end_); }
-
-    auto begin_it() const {
-      return vec.begin() + static_cast<std::ptrdiff_t>(begin_);
-    }
-
-    auto end_it() const {
+    constexpr auto end_it() const {
       return vec.begin() + static_cast<std::ptrdiff_t>(end_);
     }
 
     /* range-for support */
-    auto begin() { return begin_it(); }
-    auto end() { return end_it(); }
-
-    auto begin() const { return begin_it(); }
-    auto end() const { return end_it(); }
+    constexpr auto begin() const { return begin_it(); }
+    constexpr auto end() const { return end_it(); }
 
     /* ---------- data ---------- */
-
-    T *data() { return vec.data() + begin_; }
-
-    const T *data() const { return vec.data() + begin_; }
+    constexpr T *data() const { return vec.data() + begin_; }
   };
 
   class Iterator {
   public:
-    Iterator(std::vector<T> &v, std::size_t pos, std::size_t chunk)
+    constexpr Iterator(std::vector<T> &v, std::size_t pos, std::size_t chunk)
         : vec(v), index(pos), chunk_size(chunk) {}
 
-    Chunk operator*() {
+    constexpr Chunk operator*() const {
       std::size_t end = std::min(index + chunk_size, vec.size());
       return Chunk{vec, index, end};
     }
 
-    Iterator &operator++() {
+    constexpr Iterator &operator++() {
       index += chunk_size;
       return *this;
     }
 
-    bool operator!=(const Iterator &other) const {
+    constexpr bool operator!=(const Iterator &other) const {
       return index != other.index;
     }
 
@@ -243,33 +215,29 @@ public:
     std::size_t chunk_size;
   };
 
-  ChunksMut(std::vector<T> &v, std::size_t chunk) : vec(v), chunk_size(chunk) {
-    if (chunk_size == 0) {
-      // throw std::invalid_argument("chunk_size must be non-zero");
-    }
+  constexpr ChunksMut(std::vector<T> &v, std::size_t chunk)
+      : vec(v), chunk_size(chunk) {
+    // static_assert(chunk_size == 0);
   }
 
   /// number of chunks
-  std::size_t size() const {
+  constexpr size_t size() const {
     return (vec.size() + chunk_size - 1) / chunk_size;
   }
 
-  bool empty() const { return vec.empty(); }
+  constexpr bool empty() const { return vec.empty(); }
 
-  /// 🔹 Indexed access (NOT Rust-equivalent)
-  Chunk operator[](std::size_t chunk_index) {
-    if (chunk_index >= size()) {
-      // throw std::out_of_range("ChunksMut index out of range");
-    }
+  constexpr Chunk operator[](std::size_t chunk_index) const {
+    // static_assert(chunk_index >= size());
 
-    std::size_t begin = chunk_index * chunk_size;
-    std::size_t end = std::min(begin + chunk_size, vec.size());
+    size_t begin = chunk_index * chunk_size;
+    size_t end = std::min(begin + chunk_size, vec.size());
 
     return Chunk{vec, begin, end};
   }
 
-  Iterator begin() { return Iterator(vec, 0, chunk_size); }
-  Iterator end() { return Iterator(vec, vec.size(), chunk_size); }
+  constexpr Iterator begin() const { return Iterator(vec, 0, chunk_size); }
+  constexpr Iterator end() const { return Iterator(vec, vec.size(), chunk_size); }
 
 private:
   std::vector<T> &vec;
@@ -277,13 +245,13 @@ private:
 };
 
 template <typename T>
-ChunksMut<T> chunks_mut(std::vector<T> &vec, std::size_t chunk_size) {
+constexpr ChunksMut<T> chunks_mut(std::vector<T> &vec, std::size_t chunk_size) {
   return ChunksMut<T>(vec, chunk_size);
 }
 
 template <typename T>
-std::vector<Slice<T>> chunks_exact_mut(Slice<T> s, size_t chunk_size) {
-  assert(chunk_size != 0);
+constexpr std::vector<Slice<T>> chunks_exact_mut(Slice<T> s, size_t chunk_size) {
+  // assert(chunk_size != 0);
   std::vector<Slice<T>> chunks;
   size_t num_chunks = s.size() / chunk_size;
 
@@ -304,7 +272,7 @@ template <typename T> constexpr T wrapping_mul(T a, T b) {
 }
 
 template <typename T>
-inline static bool has_duplicates(const std::vector<T> &vec) {
+inline static constexpr bool has_duplicates(const std::vector<T> &vec) {
   for (size_t i = 1; i < vec.size(); ++i) {
     if (vec[i] == vec[i - 1])
       return true;
@@ -316,7 +284,7 @@ template <typename Container, typename Func,
           typename InnerContainer = std::decay_t<decltype(std::declval<Func>()(
               *std::begin(std::declval<Container &>())))>,
           typename Value = typename InnerContainer::value_type>
-std::vector<Value> flat_map(const Container &c, Func f) {
+constexpr std::vector<Value> flat_map(const Container &c, Func f) {
   std::vector<Value> result;
 
   for (auto x : c) {
@@ -328,7 +296,7 @@ std::vector<Value> flat_map(const Container &c, Func f) {
 }
 
 template <typename Container, typename Pred>
-Container take_while(const Container &c, Pred pred) {
+constexpr Container take_while(const Container &c, Pred pred) {
   Container result;
 
   for (const auto &x : c) {
@@ -340,7 +308,7 @@ Container take_while(const Container &c, Pred pred) {
   return result;
 }
 
-inline auto iter_zeros(std::vector<bool> n) {
+inline constexpr auto iter_zeros(std::vector<bool> n) {
   std::vector<size_t> ret;
   for (size_t i = 0; i < n.size(); i++) {
     if (!n[i]) {
@@ -350,7 +318,7 @@ inline auto iter_zeros(std::vector<bool> n) {
   return ret;
 }
 
-template <typename T> auto count_zeros(std::vector<T> &v) {
+template <typename T> constexpr auto count_zeros(std::vector<T> &v) {
   auto c = 0;
   for (auto e : v) {
     if (!e || e == false || e == 0) {
@@ -369,12 +337,22 @@ template <typename T> constexpr T rotate_right(T x, unsigned int n) {
 }
 
 constexpr std::array<uint8_t, 4> to_le_bytes(uint32_t x) {
-    return {
-        static_cast<uint8_t>(x),
-        static_cast<uint8_t>(x >> 8),
-        static_cast<uint8_t>(x >> 16),
-        static_cast<uint8_t>(x >> 24),
-    };
+  return {
+      static_cast<uint8_t>(x),
+      static_cast<uint8_t>(x >> 8),
+      static_cast<uint8_t>(x >> 16),
+      static_cast<uint8_t>(x >> 24),
+  };
+}
+
+template <typename To, typename From>
+inline constexpr To ptr_bit_cast(From *from) {
+  To to{};
+  char *dst = reinterpret_cast<char *>(&to);
+  const char *src = reinterpret_cast<const char *>(from);
+  for (unsigned i = 0; i < sizeof(To); ++i)
+    dst[i] = src[i];
+  return to;
 }
 
 } // namespace utility

@@ -1,6 +1,7 @@
 #ifndef SLICE_HPP_
 #define SLICE_HPP_
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -28,23 +29,19 @@ template <typename T> struct Slice {
   inline constexpr size_t size() const { return len; }
 
   inline constexpr T *data() const { return ptr; }
-  inline constexpr T *data() { return const_cast<T*>(ptr); }
+  inline constexpr T *data() { return const_cast<T *>(ptr); }
 
   inline constexpr Slice<T> sub(size_t offset) const {
     return Slice{ptr + offset, len - offset};
   }
 
-  inline constexpr T *begin() const { return const_cast<T*>(ptr); }
-  inline constexpr T *end() const { return const_cast<T*>(ptr) + len; }
+  inline constexpr T *begin() const { return const_cast<T *>(ptr); }
+  inline constexpr T *end() const { return const_cast<T *>(ptr) + len; }
 
   constexpr Slice &operator=(const Slice<T> &n) = default;
   constexpr Slice &operator=(Slice<T> &&n) = default;
 
-  constexpr T &operator[](size_t i) const { return const_cast<T*>(ptr)[i]; }
-
-  constexpr void set_at(size_t i, T j) const {
-    const_cast<T*>(ptr) [i] = j;
-  }
+  constexpr T &operator[](size_t i) const { return const_cast<T *>(ptr)[i]; }
 
   constexpr bool is_empty() const noexcept { return len == 0; }
   constexpr T last() const {
@@ -93,6 +90,12 @@ template <typename T> struct Slice {
       }
     }
     return false;
+  }
+
+  constexpr void copy_from_slice(Slice<T> other) const {
+    for (size_t i = 0; i < std::min(this->size(), other.size()); i++) {
+      const_cast<T *>(this->ptr)[i] = other.ptr[i];
+    }
   }
 };
 

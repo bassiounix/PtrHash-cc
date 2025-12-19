@@ -1,19 +1,20 @@
 #ifndef PORT_PTR_HASH_HPP_
 #define PORT_PTR_HASH_HPP_
 
-#include "binary_heap.hpp"
 #include "bucket_fn.hpp"
 #include "bucket_idx.hpp"
 #include "common.hpp"
 #include "enumerate.hpp"
 #include "fastrand.hpp"
 #include "ptr_hash_params.hpp"
+#include "rngs.hpp"
 #include "slice.hpp"
 #include "zip.hpp"
 #include <array>
 // #include <cassert>
 #include <cstdlib>
-#include <time.h>
+#include <print>
+#include <queue>
 #include <variant>
 
 template <typename Key = uint64_t, typename BF = Linear,
@@ -78,8 +79,8 @@ public:
                     PtrHashParams<BF> params = PtrHashParams<BF>())
       : PtrHash(this->init(keys.size(), params)) {
     if (!this->compute_pilots(keys)) {
-      // fprintf(stderr, "Unable to construct PtrHash after 10 tries. Try "
-      //                 "using a better hash or decreasing lambda.\n");
+      fprintf(stderr, "Unable to construct PtrHash after 10 tries. Try "
+                      "using a better hash or decreasing lambda.\n");
       std::abort();
     }
   }
@@ -157,15 +158,18 @@ public:
     auto tries = 0;
     constexpr size_t max_tries = 10;
 
-    srand(31415);
+    // todo: remove reinterpret casts to make constexpr
+    auto rng = rngs::StdRng::from_seed(31415);
     while (true) {
       bool contd = false;
       tries += 1;
+      std::println("Try num {}", tries);
       if (tries > max_tries) {
         return std::nullopt;
       }
 
-      this->seed_ = rand() * 69;
+      this->seed_ = rng.random();
+      // std::println("seed is {}", this->seed_);
       pilots.clear();
       utility::resize_with(pilots, this->buckets_total_, []() { return 0; });
       for (auto &t : taken) {
@@ -228,11 +232,11 @@ public:
     if (utility::sum(Slice(val.data(), val.size())) !=
         this->slots_total_ - this->n_) {
 
-      // fprintf(
-      //     stderr,
-      //     "Not the right number of free slots left!\n total slots %zu - n %zu",
-      //     this->slots_total_, this->n_);
-      // assert(0);
+      fprintf(
+          stderr,
+          "Not the right number of free slots left!\n total slots %zu - n %zu",
+          this->slots_total_, this->n_);
+      assert(0);
     }
 
     if (!this->params_.remap || this->slots_total_ == this->n_) {
@@ -326,7 +330,8 @@ public:
 
     if (!hashes.is_empty()) {
       // assert(shard * this->parts_per_shard_ <= this->part(hashes[0]));
-      // assert(this->part(hashes.last()) < (shard + 1) * this->parts_per_shard_);
+      // assert(this->part(hashes.last()) < (shard + 1) *
+      // this->parts_per_shard_);
     }
 
     std::vector<uint32_t> part_starts(this->parts_per_shard_ + 1, 0);
@@ -394,13 +399,19 @@ public:
                                              Slice<typename Hx::H> hashes,
                                              Slice<uint8_t> pilots,
                                              std::vector<bool> &taken) const {
-    auto [starts, bucket_order] = this->sort_buckets(part, hashes);
+    auto const &[starts, bucket_order] = this->sort_buckets(part, hashes);
+
     auto kmax = 256;
+
     std::vector<BucketIdx> slots(this->slots_, BucketIdx::NONE);
     constexpr size_t one = 1;
-    auto bucket_len = [&](BucketIdx b) { return starts[b + one] - starts[b]; };
+    auto bucket_len = [&](BucketIdx b) -> size_t {
+      return starts[b + one] - starts[b];
+    };
+
     auto max_bucket_len = bucket_len(bucket_order[0]);
-    BinaryHeap<std::pair<size_t, BucketIdx>> stack;
+    std::priority_queue<std::pair<size_t, BucketIdx>> stack;
+
     auto slots_for_bucket = [&](BucketIdx b, Pilot p) {
       auto hp = this->hash_pilot(p);
       return utility::map(
@@ -421,11 +432,11 @@ public:
          BucketIdx::NONE, BucketIdx::NONE, BucketIdx::NONE, BucketIdx::NONE,
          BucketIdx::NONE, BucketIdx::NONE, BucketIdx::NONE, BucketIdx::NONE,
          BucketIdx::NONE, BucketIdx::NONE, BucketIdx::NONE, BucketIdx::NONE}};
-    auto total_evictions = 0;
+    size_t total_evictions = 0;
 
     constexpr auto rng = fastrand::Rng();
 
-    for (auto [_, new_b] : enumerate(bucket_order)) {
+    for (auto const &[iter_num, new_b] : enumerate(bucket_order)) {
       auto const new_bucket = hashes.range(starts[new_b], starts[new_b + one]);
       if (new_bucket.is_empty()) {
         pilots[new_b] = 0;
@@ -435,19 +446,27 @@ public:
       size_t evictions = 0;
 
       stack.push({new_b_len, new_b});
+      // std::print("stack(push): ");
+      // for (auto x : stack) {
+      //   std::print("({} {}) ", std::get<0>(x), std::get<1>(x).i_);
+      // }
+      // std::println();
       recent.fill(BucketIdx::NONE);
       auto recent_idx = 0;
       recent[0] = new_b;
 
-      std::pair best = {std::numeric_limits<size_t>::max(),
-                        std::numeric_limits<uint64_t>::max()};
-
       while (!stack.empty()) {
-        auto pair_opt = stack.pop();
+        auto const &[b_len, b] = stack.top();
+        stack.pop();
+        // std::print("stack(pop): ");
+        // for (auto x : stack.data) {
+        //   std::print("({} {}) ", std::get<0>(x), std::get<1>(x).i_);
+        // }
+        // std::println();
         bool continue_outer_loop = false;
-        auto &[b_len, b] = pair_opt;
         if (evictions > this->slots_ && utility::is_power_of_two((evictions))) {
           if (evictions >= 10 * this->slots_) {
+            std::println("iter num {}", iter_num);
             return std::nullopt;
           }
         }
@@ -459,13 +478,16 @@ public:
         };
         if (auto fpilot = this->find_pilot(kmax, bucket, taken)) {
           auto &[p, hp] = fpilot.value();
-          pilots[b] = p;
+          pilots[b] = static_cast<uint8_t>(p);
           for (auto &p : b_slots(hp)) {
             slots[p] = b;
           }
           continue;
         }
         uint64_t p0 = rng.u8();
+        std::pair best = {std::numeric_limits<size_t>::max(),
+                          std::numeric_limits<uint64_t>::max()};
+        // std::println("rng.u8 {}", p0);
         for (auto delat : utility::Range(kmax)) {
           bool build_part_loop_continue_inner_continue = false;
           auto const p = (p0 + delat) % kmax;
@@ -473,14 +495,15 @@ public:
           auto collision_score = 0;
           for (auto &p : b_slots(hp)) {
             auto const s = slots[p];
-            auto new_score = 0;
+            size_t new_score = 0;
             if (s.is_none()) {
               continue;
             } else if (Slice(recent.data(), recent.size()).contains(s)) {
               build_part_loop_continue_inner_continue = true;
               break;
             } else {
-              new_score = bucket_len(s) * bucket_len(s);
+              auto const len = bucket_len(s);
+              new_score = len * len;
             }
             collision_score += new_score;
             if (collision_score >= std::get<0>(best)) {
@@ -516,17 +539,23 @@ public:
                   part, len, num_slots);
           return std::nullopt;
         }
+
         auto const &[_collision_score, p] = best;
-        // pilots[b] = p;
-        pilots.set_at(b, p);
+        pilots[b] = static_cast<uint8_t>(p);
         auto const hp = this->hash_pilot(p);
         for (auto &slot : b_slots(hp)) {
           auto const b2 = slots[slot];
           if (b2.is_some()) {
-            // assert(b2 != b);
+            assert(b2 != b);
             stack.push({bucket_len(b2), b2});
+            // std::print("stack(push): ");
+            // for (auto x : stack.data) {
+            //   std::print("({} {}) ", std::get<0>(x), std::get<1>(x).i_);
+            // }
+            // std::println();
             evictions++;
-            for (auto &p2 : slots_for_bucket(b2, pilots[b2])) {
+            for (auto &p2 :
+                 slots_for_bucket(b2, static_cast<Pilot>(pilots[b2]))) {
               slots[p2] = BucketIdx::NONE;
               taken[p2] = false;
             }

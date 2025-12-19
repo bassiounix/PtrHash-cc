@@ -23,7 +23,7 @@ public:
   Rng &rng;
   Rng &current;
 
-  ~RestoreOnDrop() { rng = Rng(this->current); }
+  ~RestoreOnDrop() { rng = Rng(this->current.seed_); }
 };
 
 class Rng {
@@ -45,7 +45,7 @@ public:
     constexpr uint64_t WY_CONST_0 = 0x2d35'8dcc'aa6c'78a5;
     constexpr uint64_t WY_CONST_1 = 0x8bb8'4b93'962e'acc9;
 
-    auto s = seed_ + (WY_CONST_0);
+    auto s = utility::wrapping_add(seed_, WY_CONST_0);
     seed_ = s;
     auto const t =
         static_cast<__uint128_t>(s) * static_cast<__uint128_t>(s ^ WY_CONST_1);

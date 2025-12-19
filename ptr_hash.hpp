@@ -234,7 +234,7 @@ public:
 
       fprintf(
           stderr,
-          "Not the right number of free slots left!\n total slots %zu - n %zu",
+          "Not the right number of free slots left!\n total slots %zu - n %zu\n",
           this->slots_total_, this->n_);
       assert(0);
     }

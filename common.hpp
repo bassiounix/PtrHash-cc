@@ -62,7 +62,7 @@ public:
   try_new(Slice<uint64_t> const vals) {
     for (auto i : vals) {
       if (i > std::numeric_limits<T>::max()) {
-        // fprintf(stderr, "values are larger than backing type can hold");
+        fprintf(stderr, "values are larger than backing type can hold\n");
         std::abort();
       }
     }

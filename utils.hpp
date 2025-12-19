@@ -237,7 +237,9 @@ public:
   }
 
   constexpr Iterator begin() const { return Iterator(vec, 0, chunk_size); }
-  constexpr Iterator end() const { return Iterator(vec, vec.size(), chunk_size); }
+  constexpr Iterator end() const {
+    return Iterator(vec, vec.size(), chunk_size);
+  }
 
 private:
   std::vector<T> &vec;
@@ -250,7 +252,8 @@ constexpr ChunksMut<T> chunks_mut(std::vector<T> &vec, std::size_t chunk_size) {
 }
 
 template <typename T>
-constexpr std::vector<Slice<T>> chunks_exact_mut(Slice<T> s, size_t chunk_size) {
+constexpr std::vector<Slice<T>> chunks_exact_mut(Slice<T> s,
+                                                 size_t chunk_size) {
   // assert(chunk_size != 0);
   std::vector<Slice<T>> chunks;
   size_t num_chunks = s.size() / chunk_size;
@@ -266,9 +269,17 @@ constexpr std::vector<Slice<T>> chunks_exact_mut(Slice<T> s, size_t chunk_size) 
 constexpr uint64_t C = 0x517cc1b727220a95;
 
 template <typename T> constexpr T wrapping_mul(T a, T b) {
-  static_assert(std::is_integral<T>::value, "Only integers supported");
-  using U = typename std::make_unsigned<T>::type;
-  return static_cast<T>(static_cast<U>(a) * static_cast<U>(b));
+  T result = 0;
+
+  while (b != 0) {
+    if (b & 1) {
+      result = result + a;
+    }
+    a = a << 1;
+    b = static_cast<std::make_unsigned_t<T>>(b) >> 1;
+  }
+
+  return result;
 }
 
 template <typename T>
@@ -353,6 +364,15 @@ inline constexpr To ptr_bit_cast(From *from) {
   for (unsigned i = 0; i < sizeof(To); ++i)
     dst[i] = src[i];
   return to;
+}
+
+template <typename T> T wrapping_add(T a, T b) {
+  while (b != 0) {
+    T carry = a & b;
+    a = a ^ b;
+    b = carry << 1;
+  }
+  return a;
 }
 
 } // namespace utility

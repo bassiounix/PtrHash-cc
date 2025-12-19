@@ -522,9 +522,9 @@ int main() {
 
   PerfectHashMap<pairs.size()> phm(pairs, hasher);
 
-  std::println("phm.find 1 {}", phm.find(1).value_or(-1));
-  std::println("phm.find 3 {}", phm.find(3).value_or(-1));
-  std::println("phm.find 5 (none) {}", phm.find(5).value_or(0));
+  std::println("phm.find 0x61 {}", phm.find(0x61).value_or(0));
+  std::println("phm.find 0x63 {}", phm.find(0x63).value_or(0));
+  std::println("phm.find 5 {} (not exists)", phm.find(5).value_or(0));
   std::println("phm.contains 2 {}", phm.contains(2));
   std::println("phm.size {}", phm.size());
 

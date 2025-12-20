@@ -50,7 +50,7 @@ union vec128_storage {
 
   inline static constexpr auto read_le(Slice<uint8_t> x) {
     // static_assert(x.size() == 16);
-    vec128_storage v;
+    vec128_storage constexpr v{};
     uint8_t *dst = v.u8x16.data();
     uint8_t *src = x.data();
     for (uint8_t i = 0; i < 16; ++i)
@@ -99,8 +99,8 @@ union vec256_storage {
     return mm256_shuffle_epi32(*this, 0b1001'0011);
   }
 
-  inline static vec128_storage mm256_extracti128_si256(const vec256_storage &V,
-                                                       int M) {
+  inline static constexpr vec128_storage
+  mm256_extracti128_si256(const vec256_storage &V, int M) {
     return V.sse2[M & 1];
   }
 
@@ -138,8 +138,8 @@ union vec512_storage {
         std::array<vec256_storage, 2>{this->avx[0], this->avx[1]}};
   }
 
-  static inline vec256_storage mm256_add_epi32(const vec256_storage &a,
-                                               const vec256_storage &b) {
+  static inline constexpr vec256_storage
+  mm256_add_epi32(const vec256_storage &a, const vec256_storage &b) {
     vec256_storage r;
     for (int i = 0; i < 8; ++i) {
       r.u32x8[i] = a.u32x8[i] + b.u32x8[i]; // modulo 2^32
@@ -168,8 +168,8 @@ union vec512_storage {
              mm256_add_epi32(this->avx[1], rhs.avx[1])}};
   }
 
-  static inline vec256_storage mm256_xor_si256(const vec256_storage &a,
-                                               const vec256_storage &b) {
+  static inline constexpr vec256_storage
+  mm256_xor_si256(const vec256_storage &a, const vec256_storage &b) {
     vec256_storage r;
     for (int i = 0; i < 8; ++i) {
       r.u32x8[i] = a.u32x8[i] ^ b.u32x8[i];
@@ -182,8 +182,8 @@ union vec512_storage {
                            mm256_xor_si256(this->avx[1], rhs.avx[1])}};
   }
 
-  static inline vec256_storage mm256_shuffle_epi8(const vec256_storage &a,
-                                                  const vec256_storage &b) {
+  static inline constexpr vec256_storage
+  mm256_shuffle_epi8(const vec256_storage &a, const vec256_storage &b) {
     vec256_storage r;
 
     // Helper for 128-bit lane (16 bytes)
@@ -215,8 +215,8 @@ union vec512_storage {
     return r;
   }
 
-  inline static vec256_storage mm256_set_epi64x(long long a, long long b,
-                                                long long c, long long d) {
+  inline static constexpr vec256_storage
+  mm256_set_epi64x(long long a, long long b, long long c, long long d) {
     vec256_storage v;
 
     // Lower 128-bit lane
@@ -248,8 +248,8 @@ union vec512_storage {
     return r;
   }
 
-  static inline vec256_storage mm256_srli_epi32(const vec256_storage &a,
-                                                int count) {
+  static inline constexpr vec256_storage
+  mm256_srli_epi32(const vec256_storage &a, int count) {
     vec256_storage r;
 
     // Cap the shift count at 31, as larger shifts produce zero
@@ -262,8 +262,8 @@ union vec512_storage {
     return r;
   }
 
-  static inline vec256_storage mm256_slli_epi32(const vec256_storage &a,
-                                                int count) {
+  static inline constexpr vec256_storage
+  mm256_slli_epi32(const vec256_storage &a, int count) {
     vec256_storage r;
 
     // Cap the shift count at 31, as larger shifts produce zero
@@ -318,7 +318,7 @@ union vec512_storage {
              this->avx[1].shuffle_lane_words1230()}};
   }
 
-  static inline vec256_storage
+  static inline constexpr vec256_storage
   mm256_permute2x128_si256(const vec256_storage &V1, const vec256_storage &V2,
                            int M) {
     vec256_storage r;
@@ -402,7 +402,7 @@ template <class V> struct State {
 };
 
 template <typename V = vec512_storage>
-static inline State<V> round(State<V> x) {
+static constexpr inline State<V> round(State<V> x) {
   x.a += x.b;
   x.d = (x.d ^ x.a).rotate_each_word_right16();
   x.c += x.d;
@@ -430,8 +430,8 @@ inline constexpr State<V> undiagonalize(State<V> x) {
   return x;
 }
 
-inline std::array<uint64_t, 2> add_epi64(const std::array<uint64_t, 2> &a,
-                                         const std::array<uint64_t, 2> &b) {
+inline constexpr std::array<uint64_t, 2>
+add_epi64(const std::array<uint64_t, 2> &a, const std::array<uint64_t, 2> &b) {
   return {a[0] + b[0], a[1] + b[1]};
 }
 
@@ -442,8 +442,8 @@ inline constexpr vec128_storage add_pos(vec128_storage &d, uint64_t i) {
 }
 
 // a_lo and a_hi are each 128-bit vectors represented as 4 x 32-bit integers
-inline vec256_storage mm256_setr_m128i(const vec128_storage &lo,
-                                       const vec128_storage &hi) {
+inline constexpr vec256_storage mm256_setr_m128i(const vec128_storage &lo,
+                                                 const vec128_storage &hi) {
   vec256_storage r;
 
   // lower 128-bit lane
@@ -455,8 +455,8 @@ inline vec256_storage mm256_setr_m128i(const vec128_storage &lo,
   return r;
 }
 
-inline vec128_storage mm_add_epi64(const vec128_storage &a,
-                                   const vec128_storage &b) {
+inline constexpr vec128_storage mm_add_epi64(const vec128_storage &a,
+                                             const vec128_storage &b) {
   vec128_storage r;
   // Element-wise addition of the two 64-bit integers
   r.u64x2[0] = a.u64x2[0] + b.u64x2[0];

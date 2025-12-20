@@ -158,8 +158,7 @@ public:
     auto tries = 0;
     constexpr size_t max_tries = 10;
 
-    // todo: remove reinterpret casts to make constexpr
-    auto rng = rngs::StdRng::from_seed(31415);
+    constexpr auto rng = rngs::StdRng::from_seed(31415);
     while (true) {
       bool contd = false;
       tries += 1;

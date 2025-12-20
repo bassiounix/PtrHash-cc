@@ -1,6 +1,7 @@
 #ifndef PORT_PTR_HASH_HPP_
 #define PORT_PTR_HASH_HPP_
 
+#include "binary_heap.hpp"
 #include "bucket_fn.hpp"
 #include "bucket_idx.hpp"
 #include "common.hpp"
@@ -11,10 +12,8 @@
 #include "slice.hpp"
 #include "zip.hpp"
 #include <array>
-// #include <cassert>
 #include <cstdlib>
 #include <print>
-#include <queue>
 #include <variant>
 
 template <typename Key = uint64_t, typename BF = Linear,
@@ -231,10 +230,10 @@ public:
     if (utility::sum(Slice(val.data(), val.size())) !=
         this->slots_total_ - this->n_) {
 
-      fprintf(
-          stderr,
-          "Not the right number of free slots left!\n total slots %zu - n %zu\n",
-          this->slots_total_, this->n_);
+      fprintf(stderr,
+              "Not the right number of free slots left!\n total slots %zu - n "
+              "%zu\n",
+              this->slots_total_, this->n_);
       assert(0);
     }
 
@@ -409,7 +408,7 @@ public:
     };
 
     auto max_bucket_len = bucket_len(bucket_order[0]);
-    std::priority_queue<std::pair<size_t, BucketIdx>> stack;
+    constexpr BinaryHeap<std::pair<size_t, BucketIdx>> stack;
 
     auto slots_for_bucket = [&](BucketIdx b, Pilot p) {
       auto hp = this->hash_pilot(p);
@@ -455,7 +454,7 @@ public:
       recent[0] = new_b;
 
       while (!stack.empty()) {
-        auto const &[b_len, b] = stack.top();
+        auto const &[b_len, b] = stack.peek();
         stack.pop();
         // std::print("stack(pop): ");
         // for (auto x : stack.data) {

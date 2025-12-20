@@ -1,15 +1,17 @@
 #ifndef BINARY_HEAP_HPP_
 #define BINARY_HEAP_HPP_
 
-#include <vector>
+#include <cstddef>
+#include <utility>
 
-template <typename T> class BinaryHeap {
+template <typename T, std::size_t MaxSize = 5> class BinaryHeap {
 private:
-  mutable std::vector<T> data;
+  mutable T data[MaxSize]{};
+  mutable size_t current_size = 0;
 
-  constexpr void heapify_up(size_t index) const {
+  constexpr void heapify_up(std::size_t index) const {
     while (index > 0) {
-      size_t parent = (index - 1) / 2;
+      std::size_t parent = (index - 1) / 2;
       if (data[index] <= data[parent])
         break;
       std::swap(data[index], data[parent]);
@@ -17,16 +19,15 @@ private:
     }
   }
 
-  constexpr void heapify_down(size_t index) const {
-    size_t n = data.size();
+  constexpr void heapify_down(std::size_t index) const {
     while (true) {
-      size_t left = 2 * index + 1;
-      size_t right = 2 * index + 2;
-      size_t largest = index;
+      std::size_t left = 2 * index + 1;
+      std::size_t right = 2 * index + 2;
+      std::size_t largest = index;
 
-      if (left < n && data[left] > data[largest])
+      if (left < current_size && data[left] > data[largest])
         largest = left;
-      if (right < n && data[right] > data[largest])
+      if (right < current_size && data[right] > data[largest])
         largest = right;
 
       if (largest == index)
@@ -39,36 +40,41 @@ private:
 
 public:
   constexpr BinaryHeap() = default;
-  constexpr ~BinaryHeap() = default;
 
   constexpr void push(const T &value) const {
-    data.push_back(value);
-    heapify_up(data.size() - 1);
+    if (current_size >= MaxSize)
+      return; // Optional: handle overflow
+    data[current_size] = value;
+    heapify_up(current_size);
+    ++current_size;
   }
 
   constexpr void push(T &&value) const {
-    data.push_back(std::move(value));
-    heapify_up(data.size() - 1);
+    if (current_size >= MaxSize)
+      return;
+    data[current_size] = std::move(value);
+    heapify_up(current_size);
+    ++current_size;
   }
 
   constexpr T pop() const {
-    // if (data.empty())
+    if (current_size == 0)
+      return T{}; // Optional: handle underflow
     T top = data[0];
-    data[0] = data.back();
-    data.pop_back();
-    if (!data.empty())
+    data[0] = data[current_size - 1];
+    --current_size;
+    if (current_size > 0)
       heapify_down(0);
     return top;
   }
 
-  constexpr const T peek() const {
-    // if constexpr (data.empty())
-    return data[0];
-  }
+  constexpr const T &peek() const { return data[0]; }
 
-  constexpr size_t size() const { return data.size(); }
+  constexpr size_t size() const { return current_size; }
 
-  constexpr bool empty() const { return data.empty(); }
+  constexpr bool empty() const { return current_size == 0; }
+
+  constexpr bool full() const { return current_size == MaxSize; }
 };
 
-#endif  // BINARY_HEAP_HPP_
+#endif // BINARY_HEAP_HPP_

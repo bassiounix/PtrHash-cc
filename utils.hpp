@@ -98,11 +98,11 @@ struct Range {
 
   struct Iterator {
     mutable int value;
-    int step;
+    mutable int step;
 
     constexpr int &operator*() const { return value; }
 
-    Iterator &operator++() {
+    constexpr const Iterator &operator++() const {
       value += step;
       return *this;
     }
@@ -200,7 +200,7 @@ public:
       return Chunk{vec, index, end};
     }
 
-    constexpr Iterator &operator++() {
+    constexpr const Iterator &operator++() const {
       index += chunk_size;
       return *this;
     }
@@ -211,8 +211,8 @@ public:
 
   private:
     std::vector<T> &vec;
-    std::size_t index;
-    std::size_t chunk_size;
+    mutable size_t index;
+    mutable size_t chunk_size;
   };
 
   constexpr ChunksMut(std::vector<T> &v, std::size_t chunk)

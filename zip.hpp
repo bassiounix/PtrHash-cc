@@ -10,7 +10,7 @@ public:
 
     constexpr zip_iterator(It1 it1, It2 it2) : it1_(it1), it2_(it2) {}
 
-    constexpr zip_iterator& operator++() {
+    constexpr const zip_iterator& operator++() const {
         ++it1_;
         ++it2_;
         return *this;

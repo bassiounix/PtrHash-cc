@@ -7,6 +7,7 @@
 #include "common.hpp"
 #include "enumerate.hpp"
 #include "fastrand.hpp"
+#include "math.hpp"
 #include "ptr_hash_params.hpp"
 #include "rngs.hpp"
 #include "slice.hpp"
@@ -112,7 +113,7 @@ public:
     return this->slot_in_part_hp(hx, this->hash_pilot(pilot));
   }
 
-  constexpr PtrHash init(size_t n, PtrHashParams<BF> &params) const {
+  static constexpr inline PtrHash init(size_t n, PtrHashParams<BF> &params) {
     size_t shards = (params.single_part == true) ? 1
                     : (params.sharding.type == ShardingType::None)
                         ? 1
@@ -123,9 +124,9 @@ public:
     } else {
       auto eps = (1.0 - params.alpha) / 2.0;
       auto x = n * eps * eps / 2.0;
-      auto target_parts = x / log(x);
-      auto parts_per_shard = floor((size_t)target_parts) / shards;
-      parts = std::max(parts_per_shard, 1.) * shards;
+      size_t target_parts = x / constexpr_ln(x);
+      auto parts_per_shard = target_parts / shards;
+      parts = ((parts_per_shard > 1) ? parts_per_shard : 1) * shards;
     }
 
     size_t keys_per_part = n / parts;
@@ -136,7 +137,7 @@ public:
     }
 
     size_t slots_total = parts * slots_per_part;
-    size_t buckets_per_part = ceil(keys_per_part / params.lambda) + 3;
+    size_t buckets_per_part = constexpr_ceil(keys_per_part / params.lambda) + 3;
     size_t buckets_total = parts * buckets_per_part;
 
     params.bucket_fn.set_buckets_per_part(buckets_per_part);
@@ -161,7 +162,7 @@ public:
     while (true) {
       bool contd = false;
       tries += 1;
-      std::println("Try num {}", tries);
+      // std::println("Try num {}", tries);
       if (tries > max_tries) {
         return std::nullopt;
       }
@@ -717,7 +718,7 @@ public:
       acc += tmp;
     }
     constexpr size_t one = 1;
-    for (auto &b : BucketIdx::range(this->buckets_)) {
+    for (auto &b : utility::Range(this->buckets_)) {
       size_t l = bucket_starts[b + one] - bucket_starts[b];
       order[bucket_len_cnt[l]] = b;
       bucket_len_cnt[l] += 1;

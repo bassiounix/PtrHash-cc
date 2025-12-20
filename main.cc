@@ -518,7 +518,7 @@ int main() {
     keys[i] = pairs[i][0];
   }
 
-  auto hasher = PtrHash<wint_t>(Slice<wint_t>{keys.data(), keys.size()});
+  auto hasher = PtrHash<wint_t>(Slice{keys.data(), keys.size()});
 
   PerfectHashMap<pairs.size()> phm(pairs, hasher);
 

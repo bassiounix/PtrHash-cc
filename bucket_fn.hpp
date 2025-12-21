@@ -10,7 +10,7 @@ class BucketFn {
 public:
   constexpr static bool LINEAR = false;
   constexpr static bool B_OUTPUT = false;
-  constexpr void set_buckets_per_part(uint64_t _b) {}
+  constexpr void set_buckets_per_part(uint64_t _b) const {}
   virtual constexpr uint64_t call(uint64_t x) const = 0;
 };
 

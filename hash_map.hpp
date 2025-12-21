@@ -1,13 +1,12 @@
 #ifndef HM_HASH_MAP_HPP_
 #define HM_HASH_MAP_HPP_
 
-#include "ptr_hash.hpp"
 #include <array>
 #include <cstddef>
 #include <optional>
 #include <wctype.h>
 
-template <size_t Capacity, class Hasher = PtrHash<wint_t>>
+template <size_t Capacity, class Hasher>
 class PerfectHashMap {
 public:
   struct Entry {

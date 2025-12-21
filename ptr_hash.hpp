@@ -677,31 +677,30 @@ public:
 template <typename BF = Linear>
 constexpr PtrHashParams<BF> params = PtrHashParams<BF>();
 
-template <size_t n>
-constexpr size_t shards = (params<>.single_part == true) ? 1
-                          : (params<>.sharding.type == ShardingType::None)
+template <size_t n, typename BF>
+constexpr size_t shards = (params<BF>.single_part == true) ? 1
+                          : (params<BF>.sharding.type == ShardingType::None)
                               ? 1
-                              : utility::div_ceil(n, params<>.keys_per_shard);
+                              : utility::div_ceil(n, params<BF>.keys_per_shard);
 
-template <size_t n, typename Key = uint64_t, typename BF = Linear,
-          typename F = DynamicContainer<uint32_t>, // or Vec<u32>
-          typename V = std::vector<uint8_t>>
+template <size_t n, typename BF = Linear>
 static inline constexpr size_t get_parts() {
   size_t parts = 0;
-  if (params<>.single_part) {
+  if (params<BF>.single_part) {
     parts = 1;
   } else {
-    auto eps = (1.0 - params<>.alpha) / 2.0;
+    auto eps = (1.0 - params<BF>.alpha) / 2.0;
     auto x = n * eps * eps / 2.0;
     size_t target_parts = x / constexpr_ln(x);
-    auto parts_per_shard = target_parts / shards<n>;
-    parts = ((parts_per_shard > 1) ? parts_per_shard : 1) * shards<n>;
+    auto parts_per_shard = target_parts / shards<n, BF>;
+    parts = ((parts_per_shard > 1) ? parts_per_shard : 1) * shards<n, BF>;
   }
   return parts;
 }
 
-template <size_t keys_per_part> static constexpr auto get_slots_per_part() {
-  size_t slots_per_part = keys_per_part / params<>.alpha;
+template <size_t keys_per_part, typename BF>
+static constexpr auto get_slots_per_part() {
+  size_t slots_per_part = keys_per_part / params<BF>.alpha;
   if (utility::is_power_of_two(slots_per_part)) {
     slots_per_part += 1;
   }
@@ -713,26 +712,25 @@ template <size_t n, typename Key = uint64_t, typename BF = Linear,
           typename Hx = KeyHasherDefaultImpl<Key>, // FxHasherDecl::FxHasher64,
           typename V = std::vector<uint8_t>>
 static constexpr inline auto init_hasher() {
-  size_t constexpr parts = get_parts<n>();
+  size_t constexpr parts = get_parts<n, BF>();
 
   size_t constexpr keys_per_part = n / parts;
-  size_t constexpr parts_per_shard = parts / shards<n>;
-  size_t constexpr slots_per_part = get_slots_per_part<keys_per_part>();
+  size_t constexpr parts_per_shard = parts / shards<n, BF>;
+  size_t constexpr slots_per_part = get_slots_per_part<keys_per_part, BF>();
 
   size_t constexpr slots_total = parts * slots_per_part;
   size_t constexpr buckets_per_part =
-      constexpr_ceil(keys_per_part / params<>.lambda) + 3;
+      constexpr_ceil(keys_per_part / params<BF>.lambda) + 3;
   size_t constexpr buckets_total = parts * buckets_per_part;
 
-  params<>.bucket_fn.set_buckets_per_part(buckets_per_part);
+  params<BF>.bucket_fn.set_buckets_per_part(buckets_per_part);
 
-  return PtrHash<BF, params<BF>, n, parts, shards<n>, parts_per_shard,
+  return PtrHash<BF, params<BF>, n, parts, shards<n, BF>, parts_per_shard,
                  slots_total, buckets_total, slots_per_part, buckets_per_part,
-                 Rp(shards<n>), Rp(parts), Rb(buckets_per_part),
+                 Rp(shards<n, BF>), Rp(parts), Rb(buckets_per_part),
                  Rb(buckets_total),
                  RemSlots(std::max(slots_per_part, static_cast<size_t>(1))),
-                 Key, F, Hx, V>( // fix for n=0
-      0, V(), F());
+                 Key, F, Hx, V>(0, V(), F());
 }
 
 #endif // PORT_PTR_HASH_HPP_

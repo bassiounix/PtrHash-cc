@@ -1,13 +1,13 @@
 #ifndef PORT_COMMON_HPP_
 #define PORT_COMMON_HPP_
 
+#include "enumerate.hpp"
 #include "fxhash.hpp"
 #include "slice.hpp"
 #include "utils.hpp"
 // #include <cassert>
 #include <cstdio>
 #include <limits>
-#include <vector>
 
 // inline static constexpr uint64_t mul_high(uint64_t a, uint64_t b) {
 //   uint64_t hi = 0;
@@ -22,29 +22,25 @@ class Packed {
   static constexpr std::optional<Packed> try_new(Slice<uint64_t> vals);
 };
 
-template <typename T> class DynamicContainer : public Packed {
+template <typename T, size_t N> class DynamicContainer : public Packed {
 private:
-  std::vector<T> i_;
+  std::array<T, N> i_;
 
 public:
   // DynamicContainer(Slice<T> i) : i_(i) {}
   constexpr DynamicContainer(Slice<T> &i) {
-    for (auto e : i) {
-      i_.push_back(e);
+    for (auto [i, e] : enumerate(i)) {
+      i_[i] = e;
     }
   }
-  constexpr DynamicContainer(Slice<T> &&i) {
-    for (auto e : i) {
-      i_.push_back(e);
-    }
-  }
-  constexpr DynamicContainer(std::vector<T> &v) : i_(v) {}
+  constexpr DynamicContainer(Slice<T> &&i) : DynamicContainer(i) {}
+  constexpr DynamicContainer(std::array<T, N> &v) : i_(v) {}
   constexpr DynamicContainer() = default;
-  constexpr DynamicContainer(const DynamicContainer<T> &) = default;
-  constexpr DynamicContainer(DynamicContainer<T> &&) = default;
+  constexpr DynamicContainer(const DynamicContainer<T, N> &) = default;
+  constexpr DynamicContainer(DynamicContainer<T, N> &&) = default;
 
-  constexpr DynamicContainer<T> &
-  operator=(const DynamicContainer<T> &) = default;
+  constexpr DynamicContainer<T, N> &
+  operator=(const DynamicContainer<T, N> &) = default;
   // DynamicContainer<T>& operator=(DynamicContainer<T>&&) = default;
 
   constexpr uint64_t index(size_t index) const override {
@@ -58,22 +54,21 @@ public:
 
   constexpr size_t size_in_bytes() const override { return this->i_.size(); }
 
-  static constexpr DynamicContainer<T>
+  static constexpr DynamicContainer
   try_new(Slice<uint64_t> const vals) {
-    for (auto i : vals) {
-      if (i > std::numeric_limits<T>::max()) {
-        fprintf(stderr, "values are larger than backing type can hold\n");
-        std::abort();
-      }
-    }
-    std::vector<T> n;
-    n.reserve(vals.size());
+    // for (auto i : vals) {
+    //   if (i > std::numeric_limits<T>::max()) {
+    //     fprintf(stderr, "values are larger than backing type can hold\n");
+    //     std::abort();
+    //   }
+    // }
+    std::array<T, N> n;
 
-    for (auto e : vals) {
-      n.push_back(e);
+    for (size_t i = 0; i < N; i++) {
+      n[i] = vals[i];
     }
 
-    return DynamicContainer<T>(n);
+    return DynamicContainer(n);
   }
 };
 

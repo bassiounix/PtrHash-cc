@@ -22,7 +22,7 @@ template <typename BF, PtrHashParams<BF> params_, size_t n_, size_t parts_,
           size_t buckets_total_, size_t slots_, size_t buckets_, Rp rem_shards_,
           Rp rem_parts_, Rb rem_buckets_, Rb rem_buckets_total_,
           RemSlots rem_slots_, typename Key = uint64_t,
-          typename F = DynamicContainer<uint32_t>, // or Vec<u32>
+          typename F = DynamicContainer<uint32_t, slots_total_ - n_>, // or Vec<u32>
           typename Hx =
               KeyHasherDefaultImpl<Key>,    // -> FxHasherDecl::FxHasher64,
           typename V = std::vector<uint8_t> // or Vec<u8>,
@@ -166,8 +166,8 @@ public:
       return std::monostate{};
     }
 
-    std::vector<uint64_t> v;
-    v.reserve(slots_total_ - n_);
+    std::array<uint64_t, slots_total_ - n_> v{};
+    size_t v_idx = 0;
 
     auto const get = [&](std::vector<std::vector<bool>> &t, size_t idx) {
       return t[idx / slots_][idx % slots_];
@@ -183,10 +183,10 @@ public:
                                      [&](size_t i) { return offset + i; });
                                }),
              [&](auto &i) { return i < n_; })) {
-      while (!get(taken, n_ + v.size())) {
-        v.push_back(i);
+      while (!get(taken, n_ + v_idx)) {
+        v[v_idx++] = i;
       }
-      v.push_back(i);
+      v[v_idx++] = i;
     }
     this->remap_ = F::try_new(Slice(v.data(), v.size()));
     return std::monostate{};
@@ -708,7 +708,6 @@ static constexpr auto get_slots_per_part() {
 }
 
 template <size_t n, typename Key = uint64_t, typename BF = Linear,
-          typename F = DynamicContainer<uint32_t>, // or Vec<u32>
           typename Hx = KeyHasherDefaultImpl<Key>, // FxHasherDecl::FxHasher64,
           typename V = std::vector<uint8_t>>
 static constexpr inline auto init_hasher() {
@@ -724,6 +723,8 @@ static constexpr inline auto init_hasher() {
   size_t constexpr buckets_total = parts * buckets_per_part;
 
   params<BF>.bucket_fn.set_buckets_per_part(buckets_per_part);
+
+  using F = DynamicContainer<uint32_t, slots_total - n>;
 
   return PtrHash<BF, params<BF>, n, parts, shards<n, BF>, parts_per_shard,
                  slots_total, buckets_total, slots_per_part, buckets_per_part,

@@ -1,13 +1,15 @@
 #ifndef BINARY_HEAP_HPP_
 #define BINARY_HEAP_HPP_
 
+#include "bucket_idx.hpp"
 #include <cstddef>
 #include <utility>
 
-template <typename T, std::size_t MaxSize = 5> class BinaryHeap {
+template <typename T = std::pair<size_t, BucketIdx>, std::size_t MaxSize = 5>
+class BinaryHeap {
 private:
-  mutable T data[MaxSize]{};
-  mutable size_t current_size = 0;
+  mutable std::array<T, MaxSize> data;
+  mutable size_t current_size;
 
   constexpr void heapify_up(std::size_t index) const {
     while (index > 0) {
@@ -52,16 +54,26 @@ public:
   constexpr void push(T &&value) const {
     if (current_size >= MaxSize)
       return;
-    data[current_size] = std::move(value);
+    data[current_size].first = std::move(value.first);
+    data[current_size].second = std::move(value.second);
     heapify_up(current_size);
     ++current_size;
   }
+
+  // constexpr void push(std::pair<size_t, BucketIdx> &&value) const {
+  //   if (current_size >= MaxSize)
+  //     return;
+  //   data[current_size] = {value.first, value.second};
+  //   heapify_up(current_size);
+  //   ++current_size;
+  // }
 
   constexpr T pop() const {
     if (current_size == 0)
       return T{}; // Optional: handle underflow
     T top = data[0];
-    data[0] = data[current_size - 1];
+    data[0].first = data[current_size - 1].first;
+    data[0].second = data[current_size - 1].second;
     --current_size;
     if (current_size > 0)
       heapify_down(0);

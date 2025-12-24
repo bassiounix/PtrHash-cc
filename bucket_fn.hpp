@@ -6,18 +6,21 @@
 #include <cmath>
 #include <cstdint>
 
+template<typename BucketFnImpl>
 class BucketFn {
 public:
   constexpr static bool LINEAR = false;
   constexpr static bool B_OUTPUT = false;
   constexpr void set_buckets_per_part(uint64_t _b) const {}
-  virtual constexpr uint64_t call(uint64_t x) const = 0;
+  constexpr uint64_t call(uint64_t x) const {
+    return static_cast<const BucketFnImpl*>(this)->call_impl(x);
+  }
 };
 
-class Linear : public BucketFn {
+class Linear : public BucketFn<Linear> {
 public:
   constexpr static bool LINEAR = true;
-  constexpr uint64_t call(uint64_t x) const override { return x; }
+  constexpr uint64_t call_impl(uint64_t x) const { return x; }
 };
 
 /// A 2-piece-wise linear function; as used in FCH and PTHash.
@@ -34,7 +37,7 @@ public:
 ///                ~~~ slope1 ~~~
 /// line2: y = x * ((1 - gamma) / (1 - beta)) + (gamma - beta) / (1 - beta)
 ///                ~~~~~~~~~ slope2 ~~~~~~~~~   ~~~~~~~~~~ offset ~~~~~~~~~
-class Skewed : public BucketFn {
+class Skewed : public BucketFn<Skewed> {
 public:
   mutable double beta_f;
   mutable double gamma_f;
@@ -68,7 +71,7 @@ public:
     this->beta = as_u64(beta);
   }
 
-  constexpr uint64_t call(uint64_t x) const override {
+  constexpr uint64_t call_impl(uint64_t x) const {
     // NOTE: There is a lot of MOV/CMOV going on here.
     auto is_large = x >= this->beta;
     auto slope = is_large ? this->slope2 : this->slope1;
@@ -79,11 +82,11 @@ public:
   }
 };
 
-class Optimal : public BucketFn {
+class Optimal : public BucketFn<Optimal> {
 public:
   double eps;
 
-  constexpr uint64_t call(uint64_t _x) const override {
+  constexpr uint64_t call_impl(uint64_t _x) const {
     double constexpr p32 = (1ULL << 32);
     constexpr auto p64 = p32 * p32;
     constexpr auto p64inv = 1. / p64;
@@ -94,31 +97,31 @@ public:
   }
 };
 
-class Square : public BucketFn {
+class Square : public BucketFn<Square> {
 public:
-  constexpr uint64_t call(uint64_t x) const override {
+  constexpr uint64_t call_impl(uint64_t x) const {
     return utility::mul_high(x, x);
   }
 };
 
-class SquareEps : public BucketFn {
+class SquareEps : public BucketFn<SquareEps> {
 public:
-  constexpr uint64_t call(uint64_t x) const override {
+  constexpr uint64_t call_impl(uint64_t x) const {
     return utility::mul_high(x, x) / 256 * 255 + x / 256;
   }
 };
 
-class Cubic : public BucketFn {
+class Cubic : public BucketFn<Cubic> {
 public:
-  constexpr uint64_t call(uint64_t x) const override {
+  constexpr uint64_t call_impl(uint64_t x) const {
     // x * x * (1 + x) / 2
     return utility::mul_high(utility::mul_high(x, x), (x >> 1) | (1ULL << 63));
   }
 };
 
-class CubicEps : public BucketFn {
+class CubicEps : public BucketFn<CubicEps> {
 public:
-  constexpr uint64_t call(uint64_t x) const override {
+  constexpr uint64_t call_impl(uint64_t x) const {
     // x * x * (1 + x) / 2
     return utility::mul_high(utility::mul_high(x, x), (x >> 1) | (1ULL << 63)) /
                256 * 255 +

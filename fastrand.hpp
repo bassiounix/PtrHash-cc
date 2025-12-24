@@ -11,7 +11,7 @@ namespace fastrand {
 
 constexpr uint64_t DEFAULT_RNG_SEED = 0xEF6F79ED30BA75A;
 
-inline constexpr uint64_t random_seed() {
+inline uint64_t random_seed() {
   constexpr auto state = FxHasherDecl::FxHasher64();
   state.write((uint64_t)time(0));
   state.write(pthread_self());

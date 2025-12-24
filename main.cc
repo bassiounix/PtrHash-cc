@@ -1,27 +1,7 @@
 // #include "generate_keys.hpp"
 #include "hash_map.hpp"
 #include "ptr_hash.hpp"
-#include "slice.hpp"
-#include <print>
-
-// void test_hasher() {
-//   auto keys = generate_keys<1000>();
-//   // std::array<size_t, 4> keys = {10, 2, 3, 4};
-//   constexpr auto n = keys.size();
-//   PtrHash mphf = PtrHash(Slice<uint64_t>{keys.data(), keys.size()},
-//                          PtrHashParams<Linear>());
-//   auto key = 10;
-//   auto const idx = mphf.index(key);
-//   assert(idx < n);
-//   // auto indices = mphf.index_stream<32, true, _>(&keys);
-//   // assert(indices.sum::<size_t>() == (n * (n - 1)) / 2);
-//   auto taken = std::array<bool, n>{false};
-//   for (auto &key : keys) {
-//     auto idx = mphf.index(key);
-//     assert(!taken[idx]);
-//     taken[idx] = true;
-//   }
-// }
+#include <iostream>
 
 static inline constexpr std::array<std::array<wint_t, 2>, 1458> pairs{
     {{0x61, 0x41},       {0x62, 0x42},       {0x63, 0x43},
@@ -521,35 +501,23 @@ static constexpr auto get_keys() {
   return keys;
 }
 
-static inline constexpr auto keys = get_keys();
+inline constexpr auto keys = get_keys();
+inline constexpr auto hasher = ptrhash::init_hasher<pairs.size(), wint_t, keys>();
+inline constexpr PerfectHashMap phm{pairs, hasher};
 
-constexpr void hasher_run() {
-  constexpr auto keys_slice = Slice{keys.data(), keys.size()};
-  auto hasher = init_hasher<pairs.size(), wint_t>();
-  if (!hasher.compute_pilots(keys_slice)) {
-    fprintf(stderr, "Unable to construct PtrHash after 10 tries. Try "
-                    "using a better hash or decreasing lambda.\n");
-    std::abort();
-  }
+int main() {
+  std::cout << "phm.find 0x61 " << phm.find(0x61).value_or(0) << std::endl;
+  std::cout << "phm.find 0x63 " << phm.find(0x63).value_or(0) << std::endl;
+  std::cout << "phm.find 5 (not exists) " << phm.find(5).value_or(0) << std::endl;
+  std::cout << "phm.contains 2 " << phm.contains(2) << std::endl;
+  std::cout << "phm.size " << phm.size() << std::endl;
 
-  PerfectHashMap<pairs.size(), decltype(hasher)> phm(pairs, hasher);
-
-  std::println("phm.find 0x61 {}", phm.find(0x61).value_or(0));
-  std::println("phm.find 0x63 {}", phm.find(0x63).value_or(0));
-  std::println("phm.find 5 {} (not exists)", phm.find(5).value_or(0));
-  std::println("phm.contains 2 {}", phm.contains(2));
-  std::println("phm.size {}", phm.size());
-
-  auto taken = std::array<bool, keys.size()>{false};
+  std::array<bool, keys.size()> taken{};
+  taken.fill(false);
   for (wint_t key : keys) {
     auto idx = hasher.index(key);
     assert(!taken[idx]);
     taken[idx] = true;
   }
-}
-
-int main() {
-  hasher_run();
-  // test_hasher();
   return 0;
 }

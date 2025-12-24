@@ -89,13 +89,13 @@ inline constexpr size_t write(size_t hash, Slice<uint8_t> bytes) {
   }
 }
 
-class FxHasher : public Hasher {
+class FxHasher : public Hasher<FxHasher> {
 public:
   mutable HashWordUSize hash;
 
   constexpr FxHasher() : hash(0) {}
 
-  constexpr void write(Slice<uint8_t> bytes) const override {
+  constexpr void write_impl(Slice<uint8_t> bytes) const {
     this->hash = FxHasherDecl::write(this->hash, bytes);
   }
 
@@ -111,16 +111,16 @@ public:
     }
   }
 
-  inline constexpr uint64_t finish() const override { return this->hash; }
+  inline constexpr uint64_t finish_impl() const { return this->hash; }
 };
 
-class FxHasher64 : public Hasher {
+class FxHasher64 : public Hasher<FxHasher64> {
 public:
   mutable HashWordU64 hash;
 
   constexpr FxHasher64() : hash(0) {}
 
-  inline constexpr void write(Slice<uint8_t> bytes) const override {
+  inline constexpr void write_impl(Slice<uint8_t> bytes) const {
     this->hash = write64(this->hash, bytes);
   }
 
@@ -134,16 +134,16 @@ public:
     this->hash.hash_word((uint64_t)i);
   }
   constexpr void write(uint64_t i) const { this->hash.hash_word(i); }
-  inline constexpr uint64_t finish() const override { return this->hash; }
+  inline constexpr uint64_t finish_impl() const { return this->hash; }
 };
 
-class FxHasher32 : public Hasher {
+class FxHasher32 : public Hasher<FxHasher32> {
 public:
   mutable HashWordU32 hash;
 
   constexpr FxHasher32() : hash(0) {}
 
-  inline constexpr void write(Slice<uint8_t> bytes) const override {
+  inline constexpr void write_impl(Slice<uint8_t> bytes) const {
     this->hash = write32(this->hash, bytes);
   }
 
@@ -159,7 +159,7 @@ public:
     this->hash.hash_word((uint32_t)(i >> 32));
   }
 
-  inline constexpr uint64_t finish() const override { return this->hash; }
+  inline constexpr uint64_t finish_impl() const { return this->hash; }
 };
 
 template <typename T> inline constexpr uint64_t hash64(T v) {

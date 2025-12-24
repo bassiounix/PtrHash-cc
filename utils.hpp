@@ -1,12 +1,14 @@
 #ifndef UTILS_HPP_
 #define UTILS_HPP_
 
+#include "enumerate.hpp"
 #include "slice.hpp"
 #include <algorithm>
 #include <array>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <numeric>
 #include <vector>
 
@@ -48,14 +50,28 @@ template <typename T> constexpr bool is_power_of_two_signed(T x) {
   return x > 0 && (x & (x - 1)) == 0;
 }
 
-template <typename T, typename F> constexpr auto map(T v, F func) {
-  using R = decltype(func(*std::begin(v)));
-  std::vector<R> out;
-  out.reserve(v.size());
-  for (auto &x : v)
-    out.push_back(func(x));
+template <typename T, typename F, std::size_t N>
+constexpr auto map(const std::array<T, N> &v, F func) {
+  using R = std::invoke_result_t<F, T>;
+  std::array<R, N> out{};
+
+  for (std::size_t i = 0; i < N; ++i) {
+    out[i] = func(v[i]);
+  }
+
   return out;
 }
+
+// template <typename T, typename F, std::size_t N>
+// constexpr auto map(Slice<const T> v, F func) {
+//   using R = std::invoke_result_t<F, T>;
+//   std::array<R, N> out{};
+
+//   for (std::size_t i = 0; i < N; ++i)
+//     out[i] = func(v[i]);
+
+//   return out;
+// }
 
 template <typename T, typename F> constexpr void for_each(T v, F func) {
   for (auto &x : v)
@@ -76,21 +92,32 @@ constexpr auto try_for_each(Iter &&iter, F &&f) {
   return true;
 }
 
-template <typename T, typename Pred>
-constexpr auto filter(const T &s, Pred pred) {
-  using Elem = std::decay_t<decltype(*std::begin(s))>;
-  std::vector<Elem> out;
+template <typename T, typename Pred, std::size_t N>
+constexpr auto filter(const std::array<T, N> &s, Pred pred) {
+  constexpr std::size_t M = [&] {
+    std::size_t c = 0;
+    for (const auto &x : s)
+      if (pred(x))
+        ++c;
+    return c;
+  }();
 
-  for (const auto &x : s) {
-    if (pred(x)) {
-      out.push_back(x);
-    }
-  }
+  std::array<T, M> out{};
+  std::size_t i = 0;
+
+  for (const auto &x : s)
+    if (pred(x))
+      out[i++] = x;
+
   return out;
 }
 
 template <typename T> constexpr T sum(Slice<T> container) {
-  return std::accumulate(container.begin(), container.end(), 0);
+  size_t acc = 0;
+  for (T const item : container) {
+    acc += item;
+  }
+  return acc;
 }
 
 struct Range {
@@ -146,26 +173,26 @@ constexpr void resize_with(std::vector<T> &v, size_t new_size, F gen) {
   }
 }
 
-template <typename T> class ChunksMut {
+template <typename T, size_t N> class ChunksMut {
 public:
   struct Chunk {
-    std::vector<T> &vec;
+    std::array<T, N> &arr_;
     std::size_t begin_;
     std::size_t end_;
 
     /* ---------- element access ---------- */
 
-    constexpr T &operator[](std::size_t i) const { return vec[begin_ + i]; }
+    constexpr T &operator[](std::size_t i) const { return arr_[begin_ + i]; }
 
     constexpr T &at(std::size_t i) const {
       // if (begin + i >= end)
       //   throw std::out_of_range("Chunk::at");
-      return vec[begin_ + i];
+      return arr_[begin_ + i];
     }
 
-    constexpr T &front() const { return vec[begin_]; }
+    constexpr T &front() const { return arr_[begin_]; }
 
-    constexpr T &back() const { return vec[end_ - 1]; }
+    constexpr T &back() const { return arr_[end_ - 1]; }
 
     /* ---------- capacity ---------- */
 
@@ -175,11 +202,11 @@ public:
 
     /* ---------- iterators ---------- */
     constexpr auto begin_it() const {
-      return vec.begin() + static_cast<std::ptrdiff_t>(begin_);
+      return arr_.begin() + static_cast<std::ptrdiff_t>(begin_);
     }
 
     constexpr auto end_it() const {
-      return vec.begin() + static_cast<std::ptrdiff_t>(end_);
+      return arr_.begin() + static_cast<std::ptrdiff_t>(end_);
     }
 
     /* range-for support */
@@ -187,17 +214,18 @@ public:
     constexpr auto end() const { return end_it(); }
 
     /* ---------- data ---------- */
-    constexpr T *data() const { return vec.data() + begin_; }
+    constexpr T *data() const { return arr_.data() + begin_; }
   };
 
   class Iterator {
   public:
-    constexpr Iterator(std::vector<T> &v, std::size_t pos, std::size_t chunk)
-        : vec(v), index(pos), chunk_size(chunk) {}
+    constexpr Iterator(std::array<T, N> &arr, std::size_t pos,
+                       std::size_t chunk)
+        : arr_(arr), index(pos), chunk_size(chunk) {}
 
     constexpr Chunk operator*() const {
-      std::size_t end = std::min(index + chunk_size, vec.size());
-      return Chunk{vec, index, end};
+      std::size_t end = std::min(index + chunk_size, arr_.size());
+      return Chunk{arr_, index, end};
     }
 
     constexpr const Iterator &operator++() const {
@@ -210,45 +238,46 @@ public:
     }
 
   private:
-    std::vector<T> &vec;
+    std::array<T, N> &arr_;
     mutable size_t index;
     mutable size_t chunk_size;
   };
 
-  constexpr ChunksMut(std::vector<T> &v, std::size_t chunk)
-      : vec(v), chunk_size(chunk) {
+  constexpr ChunksMut(std::array<T, N> &v, size_t chunk)
+      : arr(v), chunk_size(chunk) {
     // static_assert(chunk_size == 0);
   }
 
   /// number of chunks
   constexpr size_t size() const {
-    return (vec.size() + chunk_size - 1) / chunk_size;
+    return (arr.size() + chunk_size - 1) / chunk_size;
   }
 
-  constexpr bool empty() const { return vec.empty(); }
+  constexpr bool empty() const { return arr.empty(); }
 
   constexpr Chunk operator[](std::size_t chunk_index) const {
     // static_assert(chunk_index >= size());
 
     size_t begin = chunk_index * chunk_size;
-    size_t end = std::min(begin + chunk_size, vec.size());
+    size_t end = std::min(begin + chunk_size, arr.size());
 
-    return Chunk{vec, begin, end};
+    return Chunk{arr, begin, end};
   }
 
-  constexpr Iterator begin() const { return Iterator(vec, 0, chunk_size); }
+  constexpr Iterator begin() const { return Iterator(arr, 0, chunk_size); }
   constexpr Iterator end() const {
-    return Iterator(vec, vec.size(), chunk_size);
+    return Iterator(arr, arr.size(), chunk_size);
   }
 
 private:
-  std::vector<T> &vec;
+  std::array<T, N> &arr;
   std::size_t chunk_size;
 };
 
-template <typename T>
-constexpr ChunksMut<T> chunks_mut(std::vector<T> &vec, std::size_t chunk_size) {
-  return ChunksMut<T>(vec, chunk_size);
+template <typename T, size_t N>
+constexpr ChunksMut<T, N> chunks_mut(std::array<T, N> &arr,
+                                     std::size_t chunk_size) {
+  return ChunksMut<T, N>(arr, chunk_size);
 }
 
 template <typename T>
@@ -260,10 +289,26 @@ constexpr std::vector<Slice<T>> chunks_exact_mut(Slice<T> s,
 
   chunks.reserve(num_chunks);
   for (size_t i = 0; i < num_chunks; ++i) {
-    chunks.emplace_back(Slice<T>{s.ptr + i * chunk_size, chunk_size});
+    chunks.emplace_back(Slice<T>{s.data() + i * chunk_size, chunk_size});
   }
 
   return chunks;
+}
+
+template <size_t buckets_total_, size_t buckets_>
+constexpr auto chunks_exact_mut(
+    typename utility::ChunksMut<uint8_t, buckets_total_>::Chunk &pilots) {
+  const auto num_chunks = pilots.size() / buckets_;
+
+  for (size_t i = 0; i < num_chunks; ++i) {
+    size_t begin = pilots.begin_ + i * buckets_;
+    size_t end = std::min(begin + buckets_, pilots.arr_.size());
+    auto target_pilots =
+        typename utility::ChunksMut<uint8_t, buckets_total_>::Chunk{pilots.arr_,
+                                                                    begin, end};
+  }
+
+  // return chunks;
 }
 
 constexpr uint64_t C = 0x517cc1b727220a95;
@@ -282,10 +327,10 @@ template <typename T> constexpr T wrapping_mul(T a, T b) {
   return result;
 }
 
-template <typename T>
-inline static constexpr bool has_duplicates(const std::vector<T> &vec) {
-  for (size_t i = 1; i < vec.size(); ++i) {
-    if (vec[i] == vec[i - 1])
+template <typename T, size_t N>
+inline static constexpr bool has_duplicates(const std::array<T, N> &arr) {
+  for (size_t i = 1; i < arr.size(); ++i) {
+    if (arr[i] == arr[i - 1])
       return true;
   }
   return false;
@@ -319,17 +364,19 @@ constexpr Container take_while(const Container &c, Pred pred) {
   return result;
 }
 
-inline constexpr auto iter_zeros(std::vector<bool> n) {
-  std::vector<size_t> ret;
-  for (size_t i = 0; i < n.size(); i++) {
-    if (!n[i]) {
-      ret.push_back(i);
-    }
-  }
-  return ret;
-}
+// template <size_t N>
+// inline constexpr auto iter_zeros(std::array<bool, N> &arr_of_bools) {
+//   std::vector<size_t> ret;
+//   for (size_t i = 0; i < arr_of_bools.size(); i++) {
+//     if (!arr_of_bools[i]) {
+//       ret.push_back(i);
+//     }
+//   }
+//   return ret;
+// }
 
-template <typename T> constexpr auto count_zeros(std::vector<T> &v) {
+template <typename T, size_t N>
+constexpr auto count_zeros(std::array<T, N> &v) {
   auto c = 0;
   for (auto e : v) {
     if (!e || e == false || e == 0) {
@@ -366,13 +413,48 @@ inline constexpr To ptr_bit_cast(From *from) {
   return to;
 }
 
-template <typename T> T wrapping_add(T a, T b) {
+template <typename T> constexpr T wrapping_add(T a, T b) {
   while (b != 0) {
     T carry = a & b;
     a = a ^ b;
     b = carry << 1;
   }
   return a;
+}
+
+template <typename T, std::size_t N>
+static inline constexpr auto array_sort(std::array<T, N> &arr) {
+  if constexpr (N <= 1)
+    return arr; // base case
+
+  constexpr size_t mid = N / 2;
+
+  // Split array into left and right halves
+  std::array<T, mid> left{};
+  std::array<T, N - mid> right{};
+
+  for (std::size_t i = 0; i < mid; ++i)
+    left[i] = arr[i];
+  for (std::size_t i = mid; i < N; ++i)
+    right[i - mid] = arr[i];
+
+  // Recursively sort each half
+  left = array_sort(left);
+  right = array_sort(right);
+
+  // Merge halves
+  std::array<T, N> result{};
+  std::size_t li = 0, ri = 0, ki = 0;
+
+  while (li < mid && ri < N - mid) {
+    result[ki++] = (left[li] <= right[ri]) ? left[li++] : right[ri++];
+  }
+  while (li < mid)
+    result[ki++] = left[li++];
+  while (ri < N - mid)
+    result[ki++] = right[ri++];
+
+  return result;
 }
 
 } // namespace utility

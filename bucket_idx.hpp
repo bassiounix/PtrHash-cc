@@ -9,7 +9,7 @@ class BucketIdx {
 public:
   mutable uint32_t i_;
 
-  constexpr BucketIdx() = default;
+  constexpr BucketIdx() : i_(0) {}
 
   constexpr operator uint32_t() const { return i_; }
 

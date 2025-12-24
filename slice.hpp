@@ -5,7 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
-#include <expected>
+#include "expected.hpp"
 
 enum class Ordering {
   /// An ordering where a compared value is less than another.
@@ -23,6 +23,8 @@ template <typename T> struct Slice {
   constexpr Slice() : ptr(nullptr), len(0) {}
   constexpr Slice(T *ptr, size_t len) : ptr(ptr), len(len) {}
   constexpr Slice(T const *ptr, size_t len) : ptr(ptr), len(len) {}
+  template <typename U, size_t N>
+  constexpr Slice<U>(std::array<U, N> &arr) : ptr(arr.data()), len(arr.size()) {}
   constexpr Slice(const Slice<T> &) = default;
   constexpr Slice(Slice<T> &&) = default;
 
@@ -50,10 +52,10 @@ template <typename T> struct Slice {
   }
 
   template <typename F>
-  constexpr std::expected<size_t, size_t> binary_search_by(F f) const {
+  constexpr cpp::expected<size_t, size_t> binary_search_by(F f) const {
     auto size = this->size();
     if (size == 0) {
-      return std::unexpected(0);
+      return cpp::unexpected<size_t>(0);
     }
 
     auto base = 0;
@@ -75,7 +77,7 @@ template <typename T> struct Slice {
       auto result = base + static_cast<size_t>(cmp == Ordering::Less);
       // if constexpr (result <= this->size())
       //   std::abort();
-      return std::unexpected(result);
+      return cpp::unexpected(result);
     }
   }
 

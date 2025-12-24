@@ -3,7 +3,7 @@
         {
             "name": "Linux",
             "cStandard": "c17",
-            "cppStandard": "c++23",
+            "cppStandard": "c++17",
             "compilerPath": "/usr/bin/clang++",
             "intelliSenseMode": "clang-x64"
         }

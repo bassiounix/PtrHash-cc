@@ -9,7 +9,11 @@
 
 namespace fastrand {
 
-constexpr uint64_t DEFAULT_RNG_SEED = 0xEF6F79ED30BA75A;
+// This seed value is very important for different inputs. Bad values are known
+// to cause compilation errors in some cases.
+// Defaulted to 0xEF6F79ED30BA75A in the original implementation, but this is
+// not sufficient. 0x64a727ea04c46a32 is also viable.
+constexpr uint64_t DEFAULT_RNG_SEED = 0xeec13c9f1362aa74;
 
 inline uint64_t random_seed() {
   constexpr auto state = FxHasherDecl::FxHasher64();
@@ -30,8 +34,6 @@ class Rng {
 public:
   mutable uint64_t seed_;
 
-  // backup seed
-  // constexpr Rng() : Rng(try_with_rng().value_or(Rng(0x4d595df4d0f33173))) {}
   constexpr Rng() : Rng(DEFAULT_RNG_SEED) {}
 
   constexpr Rng(uint64_t seed) : seed_(seed) {}

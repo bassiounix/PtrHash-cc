@@ -802,7 +802,11 @@ static constexpr inline auto init_hasher() {
               rem_buckets_total<n, Key, BF, Hx>,
               rem_slots_per_part<n, Key, BF, Hx>, Key, F, Hx, PilotsTypeV>(
           0, PilotsTypeV(), F(), keys);
-  p.compute_pilots(keys);
+  if (!p.compute_pilots(keys)) {
+    fprintf(stderr, "Unable to construct PtrHash after 10 tries. Try "
+                    "using a better hash or decreasing lambda.\n");
+    std::abort();
+  }
   return p;
 }
 

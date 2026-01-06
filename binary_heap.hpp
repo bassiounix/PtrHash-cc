@@ -8,8 +8,8 @@
 template <typename T = std::pair<size_t, BucketIdx>, std::size_t MaxSize = 5>
 class BinaryHeap {
 private:
-  mutable std::array<T, MaxSize> data;
-  mutable size_t current_size;
+  mutable std::array<T, MaxSize> data{};
+  mutable size_t current_size{};
 
   constexpr void heapify_up(std::size_t index) const {
     while (index > 0) {

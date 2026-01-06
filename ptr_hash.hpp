@@ -49,7 +49,11 @@ public:
   constexpr PtrHash(uint64_t seed_, PilotsTypeV pilots_, F remap_,
                     const std::array<Key, n_> &keys)
       : seed_(seed_), pilots_(pilots_), remap_(remap_) {
-    this->compute_pilots(keys);
+    if (!this->compute_pilots(keys)) {
+      fprintf(stderr, "Unable to construct PtrHash after 10 tries. Try "
+                      "using a better hash or decreasing lambda.\n");
+      std::abort();
+    }
   }
 
   constexpr PtrHash(const PtrHash &) = default;
@@ -374,7 +378,7 @@ public:
 
       for (auto const &[i, e1] : enumerate(hashes_range)) {
         auto hx = this->slot_in_part_hp(e1, hp);
-        for (auto e2 : hashes_range.sub(i+1)) {
+        for (auto e2 : hashes_range.sub(i + 1)) {
           auto hy = this->slot_in_part_hp(e2, hp);
           if (hx == hy) {
             return true;
@@ -793,21 +797,15 @@ static constexpr inline auto init_hasher() {
   using F = StaticContainer<uint32_t, slots_total<n, Key, BF, Hx> - n>;
   using PilotsTypeV = std::array<uint8_t, buckets_total<n, Key, BF, Hx>>;
 
-  auto p =
-      PtrHash<BF, params<BF>, n, parts<n, Key, BF, Hx>, shards<n, BF>,
-              parts_per_shard<n, Key, BF, Hx>, slots_total<n, Key, BF, Hx>,
-              buckets_total<n, Key, BF, Hx>, slots_per_part<n, Key, BF, Hx>,
-              buckets_per_part<n, Key, BF, Hx>, rem_shards<n, Key, BF, Hx>,
-              rem_parts<n, Key, BF, Hx>, rem_buckets_per_part<n, Key, BF, Hx>,
-              rem_buckets_total<n, Key, BF, Hx>,
-              rem_slots_per_part<n, Key, BF, Hx>, Key, F, Hx, PilotsTypeV>(
-          0, PilotsTypeV(), F(), keys);
-  if (!p.compute_pilots(keys)) {
-    fprintf(stderr, "Unable to construct PtrHash after 10 tries. Try "
-                    "using a better hash or decreasing lambda.\n");
-    std::abort();
-  }
-  return p;
+  return PtrHash<BF, params<BF>, n, parts<n, Key, BF, Hx>, shards<n, BF>,
+                 parts_per_shard<n, Key, BF, Hx>, slots_total<n, Key, BF, Hx>,
+                 buckets_total<n, Key, BF, Hx>, slots_per_part<n, Key, BF, Hx>,
+                 buckets_per_part<n, Key, BF, Hx>, rem_shards<n, Key, BF, Hx>,
+                 rem_parts<n, Key, BF, Hx>,
+                 rem_buckets_per_part<n, Key, BF, Hx>,
+                 rem_buckets_total<n, Key, BF, Hx>,
+                 rem_slots_per_part<n, Key, BF, Hx>, Key, F, Hx, PilotsTypeV>(
+      0, PilotsTypeV(), F(), keys);
 }
 
 } // namespace ptrhash

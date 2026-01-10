@@ -1,5 +1,4 @@
 // #include "generate_keys.hpp"
-#include "hash_map.hpp"
 #include "ptr_hash.hpp"
 #include <iostream>
 
@@ -501,14 +500,59 @@ static constexpr auto get_keys() {
   return keys;
 }
 
+template <size_t Capacity, class Hasher> class PerfectHashMap {
+public:
+  struct Entry {
+    wint_t key : 21;
+    wint_t value : 21;
+    constexpr Entry() = default;
+    constexpr Entry(wint_t key, wint_t value) : key(key), value(value) {}
+  };
+
+  constexpr PerfectHashMap(
+      const std::array<std::array<wint_t, 2>, Capacity> &pairs,
+      const Hasher &hasher_)
+      : hasher_(hasher_) {
+    for (auto &[key, value] : pairs) {
+      auto const idx = hasher_.index(key);
+      // static_assert(idx < Capacity, "Index out of bounds");
+      this->entries_[idx] = Entry{key, value};
+    }
+  }
+
+  constexpr std::optional<wint_t> find(const wint_t key) const {
+    size_t idx = hasher_.index(key);
+    if (idx >= Capacity)
+      return std::nullopt;
+
+    const Entry &e = entries_[idx];
+    if (e.key != key)
+      return std::nullopt;
+
+    return e.value;
+  }
+
+  constexpr bool contains(const wint_t key) const {
+    return this->find(key).has_value();
+  }
+
+  static constexpr std::size_t size() { return Capacity; }
+
+private:
+  Entry entries_[Capacity];
+  const Hasher &hasher_;
+};
+
 inline constexpr auto keys = get_keys();
-inline constexpr auto hasher = ptrhash::init_hasher<pairs.size(), wint_t, keys>();
+inline constexpr auto hasher =
+    ptrhash::init_hasher<pairs.size(), wint_t, keys>();
 inline constexpr PerfectHashMap phm{pairs, hasher};
 
 int main() {
   std::cout << "phm.find 0x61 " << phm.find(0x61).value_or(0) << std::endl;
   std::cout << "phm.find 0x63 " << phm.find(0x63).value_or(0) << std::endl;
-  std::cout << "phm.find 5 (not exists) " << phm.find(5).value_or(0) << std::endl;
+  std::cout << "phm.find 5 (not exists) " << phm.find(5).value_or(0)
+            << std::endl;
   std::cout << "phm.contains 2 " << phm.contains(2) << std::endl;
   std::cout << "phm.size " << phm.size() << std::endl;
 
@@ -516,7 +560,7 @@ int main() {
   taken.fill(false);
   for (wint_t key : keys) {
     auto idx = hasher.index(key);
-    assert(!taken[idx]);
+    LIBC_ASSERT(!taken[idx]);
     taken[idx] = true;
   }
   return 0;

@@ -1,6 +1,11 @@
-// #include "generate_keys.hpp"
-#include "ptr_hash.hpp"
+#include <array>
+#include <cstdint>
+#include <cstdlib>
 #include <iostream>
+#include <optional>
+#include <unordered_map>
+#include <vector>
+#include <wchar.h>
 
 static inline constexpr std::array<std::array<wint_t, 2>, 1458> pairs{
     {{0x61, 0x41},       {0x62, 0x42},       {0x63, 0x43},
@@ -490,105 +495,154 @@ static inline constexpr std::array<std::array<wint_t, 2>, 1458> pairs{
      {0x1E93E, 0x1E91C}, {0x1E93F, 0x1E91D}, {0x1E940, 0x1E91E},
      {0x1E941, 0x1E91F}, {0x1E942, 0x1E920}, {0x1E943, 0x1E921}}};
 
-static constexpr auto get_keys() {
-  std::array<wint_t, pairs.size()> keys{};
+template <class K, class V> struct KeyValue {
+  K Key;
+  V Value;
+};
 
-  for (size_t i = 0; i < pairs.size(); i++) {
-    keys[i] = pairs[i][0];
+template <class K = wint_t, class V = wint_t, size_t N = 2000> class HashTable {
+  std::vector<KeyValue<K, V>> internalList[N];
+
+  static inline uint32_t hash21(K key) {
+    // Mix the 21-bit key thoroughly
+    key ^= key >> 16;
+    key *= 0x7feb352d;
+    key ^= key >> 15;
+    key *= 0x846ca68b;
+    key ^= key >> 16;
+
+    return key % N;
   }
 
-  return keys;
-}
+  static inline uint32_t hash21_fast(K key) {
+    key *= 2654435761u; // Knuth multiplicative constant
+    return (key ^ (key >> 16)) % N;
+  }
 
-template <size_t Capacity, class Hasher> class PerfectHashMap {
-public:
-  struct Entry {
-    wint_t key : 21;
-    wint_t value : 21;
-    constexpr Entry() = default;
-    constexpr Entry(wint_t key, wint_t value) : key(key), value(value) {}
-  };
+  auto GetHashCode(K key) {
+    std::hash<K> hash_fn;
+    return hash21_fast(key);
+  }
 
-  constexpr PerfectHashMap(
-      const std::array<std::array<wint_t, 2>, Capacity> &pairs,
-      const Hasher &hasher_)
-      : hasher_(hasher_) {
-    for (auto &[key, value] : pairs) {
-      auto const idx = hasher_.index(key);
-      // static_assert(idx < Capacity, "Index out of bounds");
-      this->entries_[idx] = Entry{key, value};
+  std::optional<V> Search(K key, std::vector<KeyValue<K, V>> v) {
+    for (int i = 0; i < v.size(); i++) {
+      if (v[i].Key == key)
+        return v[i].Value;
     }
+
+    return std::nullopt;
   }
 
-  constexpr std::optional<wint_t> find(const wint_t key) const {
-    size_t idx = hasher_.index(key);
-    if (idx >= Capacity)
-      return std::nullopt;
-
-    const Entry &e = entries_[idx];
-    if (e.key != key)
-      return std::nullopt;
-
-    return e.value;
+public:
+  void Add(K key, V value) {
+    auto hash = GetHashCode(key);
+    auto location = hash % N;
+    KeyValue<K, V> item;
+    item.Key = key;
+    item.Value = value;
+    internalList[location].push_back(item);
   }
 
-  constexpr bool contains(const wint_t key) const {
-    return this->find(key).has_value();
+  std::optional<V> FindItem(K key) {
+    auto hash = GetHashCode(key);
+    auto location = hash % N;
+    return Search(key, internalList[location]);
   }
 
-  static constexpr std::size_t size() { return Capacity; }
-
-  constexpr void statisticsOfCustomHashTable() const {
+  void statistics() {
     size_t usedBuckets = 0;
     size_t totalItems = 0;
-    size_t maxBucketSize = 0; // will be 1 for perfect hash
+    size_t maxBucketSize = 0;
 
-    for (size_t i = 0; i < Capacity; ++i) {
-      usedBuckets++;
-      totalItems++;
-      maxBucketSize = 1; // perfect hashing guarantee
+    for (size_t i = 0; i < N; i++) {
+      size_t bucketSize = internalList[i].size();
+      if (bucketSize > 0) {
+        usedBuckets++;
+        totalItems += bucketSize;
+        if (bucketSize > maxBucketSize) {
+          maxBucketSize = bucketSize;
+        }
+      }
     }
 
-    double loadFactor = static_cast<double>(totalItems) / Capacity;
-    double usedSlots = static_cast<double>(usedBuckets) / Capacity;
+    double loadFactor = static_cast<double>(totalItems) / N;
+    double usedSlots = static_cast<double>(usedBuckets) / N;
 
-    std::cout << "Total Buckets: " << Capacity << '\n';
+    std::cout << "Total Buckets: " << N << std::endl;
+    std::cout << "Used Buckets: " << usedBuckets << std::endl;
+    std::cout << "Total Items: " << totalItems << std::endl;
+    std::cout << "Used Slots: " << usedSlots << std::endl;
+    std::cout << "Load Factor: " << loadFactor << std::endl;
+    std::cout << "Max Bucket Size: " << maxBucketSize << std::endl;
+
+    size_t totalMemory = N * sizeof(std::vector<KeyValue<K, V>>);
+    for (size_t i = 0; i < N; i++) {
+      totalMemory += internalList[i].capacity() * sizeof(KeyValue<K, V>);
+    }
+    std::cout << "Total Memory Used (bytes): " << totalMemory << std::endl;
+  }
+};
+
+#include <unordered_map>
+#include <iostream>
+
+template <typename K, typename V>
+void printUnorderedMapStats(const std::unordered_map<K, V>& m) {
+    size_t N = m.bucket_count();
+    size_t usedBuckets = 0;
+    size_t totalItems = 0;
+    size_t maxBucketSize = 0;
+
+    for (size_t i = 0; i < N; ++i) {
+        size_t bucketSize = m.bucket_size(i);
+        if (bucketSize > 0) {
+            usedBuckets++;
+            totalItems += bucketSize;
+            if (bucketSize > maxBucketSize) {
+                maxBucketSize = bucketSize;
+            }
+        }
+    }
+
+    double loadFactor = static_cast<double>(totalItems) / N;
+    double usedSlots = static_cast<double>(usedBuckets) / N;
+
+    std::cout << "Total Buckets: " << N << '\n';
     std::cout << "Used Buckets: " << usedBuckets << '\n';
     std::cout << "Total Items: " << totalItems << '\n';
     std::cout << "Used Slots: " << usedSlots << '\n';
     std::cout << "Load Factor: " << loadFactor << '\n';
     std::cout << "Max Bucket Size: " << maxBucketSize << '\n';
-
-    size_t totalMemory = Capacity * sizeof(Entry);
-    std::cout << "Total Memory Used: " << totalMemory << " bytes\n";
-  }
-
-private:
-  Entry entries_[Capacity];
-  const Hasher &hasher_;
-};
-
-inline constexpr auto keys = get_keys();
-inline constexpr auto hasher =
-    ptrhash::init_hasher<pairs.size(), wint_t, keys>();
-inline constexpr PerfectHashMap phm{pairs, hasher};
+}
 
 int main() {
-  std::cout << "phm.find 0x61 " << phm.find(0x61).value_or(0) << std::endl;
-  std::cout << "phm.find 0x63 " << phm.find(0x63).value_or(0) << std::endl;
-  std::cout << "phm.find 5 (not exists) " << phm.find(5).value_or(0)
-            << std::endl;
-  std::cout << "phm.contains 2 " << phm.contains(2) << std::endl;
-  std::cout << "phm.size " << phm.size() << std::endl;
-  std::cout << "=====================" << std::endl;
-  phm.statisticsOfCustomHashTable();
-
-  std::array<bool, keys.size()> taken{};
-  taken.fill(false);
-  for (wint_t key : keys) {
-    auto idx = hasher.index(key);
-    LIBC_ASSERT(!taken[idx]);
-    taken[idx] = true;
+  HashTable<wint_t, wint_t> table;
+  for (size_t i = 0; i < pairs.size(); i++) {
+    table.Add(pairs[i][0], pairs[i][1]);
   }
-  return 0;
+  for (size_t i = 0; i < pairs.size(); i++) {
+    auto result = table.FindItem(pairs[i][0]);
+    if (!result.has_value() || result.value() != pairs[i][1]) {
+      return EXIT_FAILURE;
+    }
+  }
+  table.statistics();
+
+  std::unordered_map<wint_t, wint_t> umap;
+  for (size_t i = 0; i < pairs.size(); i++) {
+    umap[pairs[i][0]] = pairs[i][1];
+  }
+  std::cout << "===================\nUnordered Map Total Memory Used (bytes): ";
+
+
+  std::cout << (umap.size() *
+                    (sizeof(std::unordered_map<wint_t, wint_t>::value_type) +
+                     sizeof(void *)) + // data list
+                umap.bucket_count() *
+                    (sizeof(void *) + sizeof(size_t))) // bucket index
+                   * 1 // estimated allocation overheads
+            << std::endl;
+  printUnorderedMapStats(umap);
+
+  return EXIT_SUCCESS;
 }

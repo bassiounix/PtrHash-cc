@@ -9,6 +9,7 @@
 - Load Factor: 0.618583
 - Max Bucket Size: 4
 - Total Memory Used (bytes): 61040 = 60KB
+- Average time per lookup: 200 nanoseconds
 
 ## PtrHash
 
@@ -19,6 +20,7 @@
 - Load Factor: 1
 - Max Bucket Size: 1
 - Total Memory Used: 11664 bytes + 489 pilots (bytes) = 12KB
+- Average time per lookup: 24 - 30 nanoseconds
 
 ## Custom Table: 1458 Max Items
 

@@ -1,5 +1,6 @@
 // #include "generate_keys.hpp"
 #include "ptr_hash.hpp"
+#include "timer.h"
 #include <iostream>
 
 static inline constexpr std::array<std::array<wint_t, 2>, 1458> pairs{
@@ -590,5 +591,24 @@ int main() {
     LIBC_ASSERT(!taken[idx]);
     taken[idx] = true;
   }
+
+  // stress test the phm.find function and know what is the avg time taken
+  for (wint_t key : keys) {
+    Timer timer;
+    taken[0] = phm.find(key).has_value();
+  }
   return 0;
 }
+
+// #include <benchmark/benchmark.h>
+
+// static void BM_PtrHash(benchmark::State& state) {
+//   for (auto _ : state) {
+//     // This code gets timed
+//     phm.find(0x65);
+//   }
+// }
+// // Register the function as a benchmark
+// BENCHMARK(BM_PtrHash);
+// // Run the benchmark
+// BENCHMARK_MAIN();

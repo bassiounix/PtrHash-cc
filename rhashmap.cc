@@ -1,3 +1,4 @@
+#include "timer.h"
 #include <array>
 #include <cstdint>
 #include <cstdlib>
@@ -583,36 +584,33 @@ public:
   }
 };
 
-#include <unordered_map>
-#include <iostream>
-
 template <typename K, typename V>
-void printUnorderedMapStats(const std::unordered_map<K, V>& m) {
-    size_t N = m.bucket_count();
-    size_t usedBuckets = 0;
-    size_t totalItems = 0;
-    size_t maxBucketSize = 0;
+void printUnorderedMapStats(const std::unordered_map<K, V> &m) {
+  size_t N = m.bucket_count();
+  size_t usedBuckets = 0;
+  size_t totalItems = 0;
+  size_t maxBucketSize = 0;
 
-    for (size_t i = 0; i < N; ++i) {
-        size_t bucketSize = m.bucket_size(i);
-        if (bucketSize > 0) {
-            usedBuckets++;
-            totalItems += bucketSize;
-            if (bucketSize > maxBucketSize) {
-                maxBucketSize = bucketSize;
-            }
-        }
+  for (size_t i = 0; i < N; ++i) {
+    size_t bucketSize = m.bucket_size(i);
+    if (bucketSize > 0) {
+      usedBuckets++;
+      totalItems += bucketSize;
+      if (bucketSize > maxBucketSize) {
+        maxBucketSize = bucketSize;
+      }
     }
+  }
 
-    double loadFactor = static_cast<double>(totalItems) / N;
-    double usedSlots = static_cast<double>(usedBuckets) / N;
+  double loadFactor = static_cast<double>(totalItems) / N;
+  double usedSlots = static_cast<double>(usedBuckets) / N;
 
-    std::cout << "Total Buckets: " << N << '\n';
-    std::cout << "Used Buckets: " << usedBuckets << '\n';
-    std::cout << "Total Items: " << totalItems << '\n';
-    std::cout << "Used Slots: " << usedSlots << '\n';
-    std::cout << "Load Factor: " << loadFactor << '\n';
-    std::cout << "Max Bucket Size: " << maxBucketSize << '\n';
+  std::cout << "Total Buckets: " << N << '\n';
+  std::cout << "Used Buckets: " << usedBuckets << '\n';
+  std::cout << "Total Items: " << totalItems << '\n';
+  std::cout << "Used Slots: " << usedSlots << '\n';
+  std::cout << "Load Factor: " << loadFactor << '\n';
+  std::cout << "Max Bucket Size: " << maxBucketSize << '\n';
 }
 
 int main() {
@@ -626,23 +624,64 @@ int main() {
       return EXIT_FAILURE;
     }
   }
-  table.statistics();
-
-  std::unordered_map<wint_t, wint_t> umap;
-  for (size_t i = 0; i < pairs.size(); i++) {
-    umap[pairs[i][0]] = pairs[i][1];
+  // table.statistics();
+  for (auto pair : pairs) {
+    Timer timer;
+    table.FindItem(pair[0]);
   }
-  std::cout << "===================\nUnordered Map Total Memory Used (bytes): ";
 
+  // std::unordered_map<wint_t, wint_t> umap;
+  // for (size_t i = 0; i < pairs.size(); i++) {
+  //   umap[pairs[i][0]] = pairs[i][1];
+  // }
 
-  std::cout << (umap.size() *
-                    (sizeof(std::unordered_map<wint_t, wint_t>::value_type) +
-                     sizeof(void *)) + // data list
-                umap.bucket_count() *
-                    (sizeof(void *) + sizeof(size_t))) // bucket index
-                   * 1 // estimated allocation overheads
-            << std::endl;
-  printUnorderedMapStats(umap);
+  // for (auto pair : pairs) {
+  //   Timer timer;
+  //   umap.at(pair[0]);
+  // }
+
+  // std::cout << "===================\nUnordered Map Total Memory Used (bytes): ";
+
+  // std::cout << (umap.size() *
+  //                   (sizeof(std::unordered_map<wint_t, wint_t>::value_type) +
+  //                    sizeof(void *)) + // data list
+  //               umap.bucket_count() *
+  //                   (sizeof(void *) + sizeof(size_t))) // bucket index
+  //                  * 1 // estimated allocation overheads
+  //           << std::endl;
+  // printUnorderedMapStats(umap);
 
   return EXIT_SUCCESS;
 }
+
+// #include <benchmark/benchmark.h>
+
+// static void BM_CustomHT(benchmark::State& state) {
+//   // Perform setup here
+//   HashTable<wint_t, wint_t> table;
+//   for (size_t i = 0; i < pairs.size(); i++) {
+//     table.Add(pairs[i][0], pairs[i][1]);
+//   }
+
+//   for (auto _ : state) {
+//     // This code gets timed
+//     table.FindItem(0x65);
+//   }
+// }
+
+// static void BM_UnorderedMap(benchmark::State& state) {
+//   // Perform setup here
+//   std::unordered_map<wint_t, wint_t> umap;
+//   for (size_t i = 0; i < pairs.size(); i++) {
+//     umap[pairs[i][0]] = pairs[i][1];
+//   }
+//   for (auto _ : state) {
+//     // This code gets timed
+//     umap.at(0x65);
+//   }
+// }
+// // Register the function as a benchmark
+// BENCHMARK(BM_CustomHT);
+// BENCHMARK(BM_UnorderedMap);
+// // Run the benchmark
+// BENCHMARK_MAIN();

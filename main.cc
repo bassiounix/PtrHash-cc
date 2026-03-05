@@ -500,78 +500,9 @@ static constexpr auto get_keys() {
   return keys;
 }
 
-template <size_t Capacity, class Hasher> class PerfectHashMap {
-public:
-  struct Entry {
-    wint_t key : 21;
-    wint_t value : 21;
-    constexpr Entry() = default;
-    constexpr Entry(wint_t key, wint_t value) : key(key), value(value) {}
-  };
-
-  constexpr PerfectHashMap(
-      const std::array<std::array<wint_t, 2>, Capacity> &pairs,
-      const Hasher &hasher_)
-      : hasher_(hasher_) {
-    for (auto &[key, value] : pairs) {
-      auto const idx = hasher_.index(key);
-      // static_assert(idx < Capacity, "Index out of bounds");
-      this->entries_[idx] = Entry{key, value};
-    }
-  }
-
-  constexpr std::optional<wint_t> find(const wint_t key) const {
-    size_t idx = hasher_.index(key);
-    if (idx >= Capacity)
-      return std::nullopt;
-
-    const Entry &e = entries_[idx];
-    if (e.key != key)
-      return std::nullopt;
-
-    return e.value;
-  }
-
-  constexpr bool contains(const wint_t key) const {
-    return this->find(key).has_value();
-  }
-
-  static constexpr std::size_t size() { return Capacity; }
-
-  constexpr void statisticsOfCustomHashTable() const {
-    size_t usedBuckets = 0;
-    size_t totalItems = 0;
-    size_t maxBucketSize = 0; // will be 1 for perfect hash
-
-    for (size_t i = 0; i < Capacity; ++i) {
-      usedBuckets++;
-      totalItems++;
-      maxBucketSize = 1; // perfect hashing guarantee
-    }
-
-    double loadFactor = static_cast<double>(totalItems) / Capacity;
-    double usedSlots = static_cast<double>(usedBuckets) / Capacity;
-
-    std::cout << "Total Buckets: " << Capacity << '\n';
-    std::cout << "Used Buckets: " << usedBuckets << '\n';
-    std::cout << "Total Items: " << totalItems << '\n';
-    std::cout << "Used Slots: " << usedSlots << '\n';
-    std::cout << "Load Factor: " << loadFactor << '\n';
-    std::cout << "Max Bucket Size: " << maxBucketSize << '\n';
-
-    size_t totalMemory = Capacity * sizeof(Entry);
-    std::cout << "Total Memory Used: " << totalMemory << " bytes\n";
-  }
-
-private:
-  Entry entries_[Capacity];
-  const Hasher &hasher_;
-};
-
-inline constexpr auto keys = get_keys();
-inline constexpr auto hasher =
-    ptrhash::init_hasher<pairs.size(), wint_t, keys>();
-inline constexpr PerfectHashMap phm{pairs, hasher};
+auto keys = get_keys();
+auto hasher = ptrhash::init_hasher<pairs.size(), wint_t>(keys);
+ptrhash::PerfectHashMap phm{pairs, hasher};
 
 int main() {
   std::cout << "phm.find 0x61 " << phm.find(0x61).value_or(0) << std::endl;
@@ -580,14 +511,12 @@ int main() {
             << std::endl;
   std::cout << "phm.contains 2 " << phm.contains(2) << std::endl;
   std::cout << "phm.size " << phm.size() << std::endl;
-  std::cout << "=====================" << std::endl;
-  phm.statisticsOfCustomHashTable();
 
   std::array<bool, keys.size()> taken{};
   taken.fill(false);
   for (wint_t key : keys) {
     auto idx = hasher.index(key);
-    LIBC_ASSERT(!taken[idx]);
+    assert(!taken[idx]);
     taken[idx] = true;
   }
   return 0;

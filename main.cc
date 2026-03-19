@@ -500,8 +500,9 @@ static constexpr auto get_keys() {
   return keys;
 }
 
-auto keys = get_keys();
-auto hasher = ptrhash::init_hasher<pairs.size(), wint_t>(keys);
+constexpr auto keys = get_keys();
+const auto &[seed, pilots, remap] = ptrhash::get_params(keys);
+auto hasher = ptrhash::init_hasher<pairs.size()>(seed, pilots, remap);
 ptrhash::PerfectHashMap phm{pairs, hasher};
 
 int main() {

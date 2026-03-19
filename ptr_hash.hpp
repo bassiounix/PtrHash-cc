@@ -672,20 +672,9 @@ public:
         return taken[this->slot_in_part_hp(hx, hp)];
       };
       auto bad = false;
-      for (size_t i = 0; i < r; i += 4) {
-        std::array<bool, 4> checks{{
-            check(bucket[i]),
-            check(bucket[i + 1]),
-            check(bucket[i + 2]),
-            check(bucket[i + 3]),
-        }};
-        for (auto bad : checks) {
-          if (bad) {
-            find_pilot_continue = true;
-            break;
-          }
-        }
-        if (find_pilot_continue) {
+      for (size_t i = 0; i < r; i++) {
+        if (check(bucket[i])) {
+          find_pilot_continue = true;
           break;
         }
       }

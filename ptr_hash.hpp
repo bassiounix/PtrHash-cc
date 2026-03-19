@@ -799,7 +799,7 @@ public:
 };
 
 template <size_t n, typename Key = uint64_t>
-LIBC_INLINE constexpr auto init_hasher(const std::array<Key, n> &keys) {
+LIBC_INLINE constexpr auto get_params(const std::array<Key, n> &keys) {
   using F = std::array<uint32_t, ptrhash_config<n>::slots_total - n>;
   using PilotsTypeV = std::array<uint8_t, ptrhash_config<n>::buckets_total>;
 
@@ -816,11 +816,20 @@ LIBC_INLINE constexpr auto init_hasher(const std::array<Key, n> &keys) {
 
   auto &[seed, pilots, remap] = result.value();
 
+  return std::tuple<uint64_t, PilotsTypeV, F>{seed, pilots, remap};
+}
+
+template <size_t n,
+          typename PilotsTypeV =
+              std::array<uint8_t, ptrhash_config<n>::buckets_total>,
+          typename F = std::array<uint32_t, ptrhash_config<n>::slots_total - n>>
+LIBC_INLINE constexpr auto init_hasher(size_t seed, PilotsTypeV pilots,
+                                       F remap) {
   return PtrHash<
       n, ptrhash_config<n>::parts, ptrhash_config<n>::parts_per_shard,
       ptrhash_config<n>::slots_total, ptrhash_config<n>::buckets_total,
-      ptrhash_config<n>::slots_per_part, ptrhash_config<n>::buckets_per_part,
-      Key, F, PilotsTypeV>(seed, pilots, remap);
+      ptrhash_config<n>::slots_per_part, ptrhash_config<n>::buckets_per_part>(
+      seed, pilots, remap);
 }
 
 template <size_t Capacity, class Hasher> class PerfectHashMap {

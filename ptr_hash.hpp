@@ -99,6 +99,78 @@ template <typename T> constexpr bool is_power_of_two(T x) {
   return x != 0 && (x & (x - 1)) == 0;
 }
 
+constexpr double constexpr_ln(double x) {
+  if (x <= 0.0)
+    return 0.0;
+
+  // Range reduction: bring x to [0.5, 2)
+  int k = 0;
+  while (x > 2.0) {
+    x *= 0.5;
+    ++k;
+  }
+  while (x < 0.5) {
+    x *= 2.0;
+    --k;
+  }
+
+  // ln(x) ≈ 2 * sum_{n=0}^∞ (1/(2n+1)) * ((x-1)/(x+1))^(2n+1)
+  const double y = (x - 1.0) / (x + 1.0);
+  const double y2 = y * y;
+
+  double term = y;
+  double sum = 0.0;
+
+  // 20 iterations ≈ double precision accuracy
+  for (int n = 1; n <= 39; n += 2) {
+    sum += term / n;
+    term *= y2;
+  }
+
+  // ln(x) = 2 * sum + k * ln(2)
+  return 2.0 * sum + k * 0.693147180559945309417232121458176568;
+}
+
+template <typename T> constexpr T constexpr_ceil(T x) {
+  static_assert(std::is_floating_point_v<T>);
+  long long i = static_cast<long long>(x);
+  return (static_cast<T>(i) == x)
+             ? x
+             : (x > T{0} ? static_cast<T>(i + 1) : static_cast<T>(i));
+}
+
+LIBC_INLINE constexpr size_t get_parts(size_t n) {
+  size_t parts = 0;
+  auto eps = 0.01 / 2.0;
+  auto x = n * eps * eps / 2.0;
+  size_t target_parts = x / constexpr_ln(x);
+  auto parts_per_shard = target_parts / shards;
+  parts = ((parts_per_shard > 1) ? parts_per_shard : 1) * shards;
+  return parts;
+}
+
+LIBC_INLINE constexpr size_t get_slots_per_part(size_t keys_per_part) {
+  size_t slots_per_part = keys_per_part / 0.99;
+  if (is_power_of_two(slots_per_part)) {
+    slots_per_part += 1;
+  }
+  return slots_per_part;
+}
+
+template <size_t n> class ptrhash_config {
+public:
+  LIBC_INLINE_VAR static constexpr size_t parts = get_parts(n);
+  LIBC_INLINE_VAR static constexpr size_t keys_per_part = n / parts;
+  LIBC_INLINE_VAR static constexpr size_t parts_per_shard = parts / shards;
+  LIBC_INLINE_VAR static constexpr size_t slots_per_part =
+      get_slots_per_part(keys_per_part);
+  LIBC_INLINE_VAR static constexpr size_t slots_total = parts * slots_per_part;
+  LIBC_INLINE_VAR static constexpr size_t buckets_per_part =
+      constexpr_ceil(keys_per_part / 3.0) + 3;
+  LIBC_INLINE_VAR static constexpr size_t buckets_total =
+      parts * buckets_per_part;
+};
+
 template <size_t n_, size_t parts_, size_t parts_per_shard_,
           size_t slots_total_, size_t buckets_total_, size_t slots_,
           size_t buckets_, typename Key = uint64_t,
@@ -188,21 +260,25 @@ public:
       const size_t pilots_chunk_size =
           std::max(buckets_ * parts_per_shard_, static_cast<size_t>(1));
       const size_t taken_chunk_size = parts_per_shard_;
+      const size_t num_pilots_chunks =
+          (pilots.size() + pilots_chunk_size - 1) / pilots_chunk_size;
+      const size_t num_taken_chunks =
+          (taken.size() + taken_chunk_size - 1) / taken_chunk_size;
 
-      for (size_t shard = 0; shard < shard_hashes.size(); shard++) {
+      for (size_t shard = 0;
+           shard <
+           std::min({shard_hashes.size(), num_pilots_chunks, num_taken_chunks});
+           shard++) {
         std::array<uint64_t, n_> hashes = shard_hashes[shard];
 
-        size_t p_begin = shard * pilots_chunk_size;
-        size_t p_end = std::min(p_begin + pilots_chunk_size, pilots.size());
-        cpp::span<uint8_t> pilots_span =
-            cpp::span<uint8_t>(pilots.data(), pilots.size())
-                .subspan(p_begin, p_end - p_begin);
+        size_t pilots_begin = shard * pilots_chunk_size;
+        size_t pilots_end =
+            std::min(pilots_begin + pilots_chunk_size, pilots.size());
 
-        size_t t_begin = shard * taken_chunk_size;
-        size_t t_end = std::min(t_begin + taken_chunk_size, taken.size());
-        cpp::span<std::array<bool, slots_>> taken_span =
-            cpp::span<std::array<bool, slots_>>(taken.data(), taken.size())
-                .subspan(t_begin, t_end - t_begin);
+        size_t taken_begin = shard * taken_chunk_size;
+        size_t taken_end =
+            std::min(taken_begin + taken_chunk_size, taken.size());
+
         std::optional<std::pair<std::array<uint64_t, n_>,
                                 std::array<uint32_t, parts_per_shard_ + 1>>>
             sorted_parts = this->sort_parts(shard, hashes);
@@ -213,8 +289,9 @@ public:
 
         auto &[new_hashes, part_starts] = sorted_parts.value();
 
-        if (!this->build_shard(shard, new_hashes, part_starts, pilots_span,
-                               taken_span)) {
+        if (!this->build_shard(shard, new_hashes, part_starts, pilots,
+                               pilots_begin, pilots_end, taken_begin, taken_end,
+                               taken)) {
           contd = true;
           break;
         }
@@ -238,7 +315,7 @@ public:
   constexpr cpp::expected<std::monostate, std::nullopt_t>
   remap_free_slots(std::array<std::array<bool, slots_>, parts_> &taken) {
     std::array<size_t, parts_> val{};
-    for (size_t i = 0; i < parts_; ++i) {
+    for (size_t i = 0; i < taken.size(); ++i) {
       size_t counter = 0;
       for (auto element : taken[i]) {
         if (!element) {
@@ -301,11 +378,11 @@ public:
 
   constexpr std::array<std::array<uint64_t, n_>, 1>
   no_sharding(const std::array<Key, n_> &keys) const {
-    std::array<std::array<uint64_t, n_>, 1> result{};
-    for (size_t i = 0; i < n_; ++i) {
-      result[0][i] = this->hash_key(keys[i]);
+    std::array<uint64_t, n_> ret;
+    for (size_t i = 0; i < keys.size(); i++) {
+      ret[i] = this->hash_key(keys[i]);
     }
-    return result;
+    return {ret};
   }
 
   constexpr uint64_t hash_key(Key x) const {
@@ -316,14 +393,12 @@ public:
     return value ^ this->seed_;
   }
 
-  constexpr size_t shard(uint64_t hx) const { return hx % ptrhash::shards; }
-
   constexpr std::optional<std::pair<std::array<uint64_t, n_>,
                                     std::array<uint32_t, parts_per_shard_ + 1>>>
   sort_parts(size_t shard, std::array<uint64_t, n_> hashes) const {
     for (size_t i = 0; i < hashes.size(); i++) {
       for (size_t j = i + 1; j < hashes.size(); j++) {
-        if (this->bucket(hashes[i]) > this->bucket(hashes[j])) {
+        if (hashes[i] > hashes[j]) {
           auto temp = hashes[i];
           hashes[i] = hashes[j];
           hashes[j] = temp;
@@ -380,15 +455,19 @@ public:
   constexpr bool
   build_shard(size_t shard, std::array<uint64_t, n_> &hashes,
               std::array<uint32_t, parts_per_shard_ + 1> &part_starts,
-              cpp::span<uint8_t> pilots,
-              cpp::span<std::array<bool, slots_>> taken) const {
-    size_t part_in_shard = 0;
-    for (auto &&taken_item : taken) {
-      const auto num_chunks = pilots.size() / buckets_;
+              PilotsTypeV &pilots, size_t pilots_begin, size_t pilots_end,
+              size_t taken_begin, size_t taken_end,
+              std::array<std::array<bool, slots_>, parts_> &taken) const {
+
+    size_t pilots_chunk_size = pilots_end - pilots_begin;
+
+    auto part_in_shard = 0;
+    for (size_t taken_idx = taken_begin; taken_idx < taken_end; ++taken_idx) {
+      const auto num_chunks = pilots_chunk_size / buckets_;
       for (size_t i = 0; i < num_chunks; ++i) {
-        size_t begin = i * buckets_;
-        size_t end = std::min(begin + buckets_, pilots.size());
-        cpp::span<uint8_t> target_pilots = pilots.subspan(begin, end - begin);
+        size_t target_pilots_begin = pilots_begin + i * buckets_;
+        size_t target_pilots_end =
+            std::min(target_pilots_begin + buckets_, pilots_end);
         auto part = shard * parts_per_shard_ + part_in_shard;
 
         auto _cnt = this->build_part(
@@ -396,7 +475,10 @@ public:
             cpp::span<uint64_t>(hashes).subspan(part_starts[part_in_shard],
                                                 part_starts[part_in_shard + 1] -
                                                     part_starts[part_in_shard]),
-            target_pilots, taken_item);
+            cpp::span(
+                const_cast<uint8_t *>(pilots.data() + target_pilots_begin),
+                target_pilots_end - target_pilots_begin),
+            taken[taken_idx]);
         if (!_cnt) {
           return false;
         }
@@ -416,7 +498,7 @@ public:
     std::array<uint32_t, buckets_ + 1> starts = sorted_buckets.first;
     std::array<uint32_t, buckets_> bucket_order = sorted_buckets.second;
 
-    auto kmax = 256;
+    auto kmax = 256u;
 
     std::array<uint32_t, slots_> slots{};
     for (size_t i = 0; i < slots_; i++) {
@@ -433,7 +515,7 @@ public:
       auto hp = this->hash_pilot(p);
       auto hashes_range = hashes.subspan(starts[b], starts[b + 1] - starts[b]);
 
-      size_t i = 0;
+      auto i = 0;
       for (auto const &e1 : hashes_range) {
         auto hx = this->slot_in_part_hp(e1, hp);
         for (auto e2 : hashes_range.subspan(i + 1)) {
@@ -456,8 +538,8 @@ public:
 
     auto rng = fastrand();
 
-    size_t iter_num = 0;
-    for (auto const &new_b : bucket_order) {
+    for (size_t iter_num = 0; iter_num < bucket_order.size(); iter_num++) {
+      auto const &new_b = bucket_order[iter_num];
       auto const new_bucket =
           hashes.subspan(starts[new_b], starts[new_b + 1] - starts[new_b]);
       if (new_bucket.empty()) {
@@ -575,30 +657,47 @@ public:
       }
 
       total_evictions += evictions;
-      iter_num++;
     }
     return total_evictions;
   }
 
-  constexpr std::optional<std::pair<uint64_t, uint64_t>>
+  LIBC_INLINE constexpr std::optional<std::pair<uint64_t, uint64_t>>
   find_pilot(uint64_t kmax, cpp::span<uint64_t> bucket,
              std::array<bool, slots_> &taken) const {
-    for (size_t p = 0; p < kmax; ++p) {
+    auto const r = bucket.size() / 4 * 4;
+    for (size_t p = 0; p < kmax; p++) {
+      bool find_pilot_continue = false;
       auto const hp = this->hash_pilot(p);
       auto const check = [&](uint64_t hx) {
         return taken[this->slot_in_part_hp(hx, hp)];
       };
-
-      bool bad = false;
-      for (auto hx : bucket) {
-        if (check(hx)) {
-          bad = true;
+      auto bad = false;
+      for (size_t i = 0; i < r; i += 4) {
+        std::array<bool, 4> checks{{
+            check(bucket[i]),
+            check(bucket[i + 1]),
+            check(bucket[i + 2]),
+            check(bucket[i + 3]),
+        }};
+        for (auto bad : checks) {
+          if (bad) {
+            find_pilot_continue = true;
+            break;
+          }
+        }
+        if (find_pilot_continue) {
           break;
         }
       }
-
-      if (bad)
+      if (find_pilot_continue) {
         continue;
+      }
+      for (auto hx : bucket.subspan(r)) {
+        bad |= check(hx);
+      }
+      if (bad) {
+        continue;
+      }
 
       if (this->try_take_pilot(bucket, hp, taken)) {
         return std::pair(p, hp);
@@ -609,8 +708,8 @@ public:
 
   constexpr bool try_take_pilot(cpp::span<uint64_t> bucket, uint64_t hp,
                                 std::array<bool, slots_> &taken) const {
-    size_t i = 0;
-    for (auto hx : bucket) {
+    for (size_t i = 0; i < bucket.size(); i++) {
+      size_t hx = bucket[i];
       auto const slot = this->slot_in_part_hp(hx, hp);
       if (taken[slot]) {
         for (auto hx : bucket.subspan(0, i)) {
@@ -619,7 +718,6 @@ public:
         return false;
       }
       taken[slot] = true;
-      i++;
     }
     return true;
   }
@@ -641,7 +739,12 @@ public:
   }
 
   constexpr size_t slot_in_part_hp(uint64_t hx, uint64_t hp) const {
-    return (hx ^ hp) % slots_;
+    uint64_t d =
+        std::max(ptrhash_config<n_>::slots_per_part, static_cast<size_t>(1));
+    uint64_t m = std::numeric_limits<uint64_t>::max() / d + 1;
+    auto lowbits = m * (hx ^ hp);
+    return (static_cast<__uint128_t>(lowbits) * static_cast<__uint128_t>(d)) >>
+           64;
   }
 
   constexpr std::pair<std::array<uint32_t, buckets_ + 1>,
@@ -658,7 +761,7 @@ public:
     size_t end = 0;
     bucket_starts[bucket_starts_idx++] = end;
 
-    for (size_t b = 0; b < buckets_; ++b) {
+    for (size_t b = 0; b < buckets_; b++) {
       auto start = end;
       while (end < hashes.size() &&
              this->bucket(hashes[end]) == part * buckets_ + b) {
@@ -678,12 +781,12 @@ public:
     //  "larger than the expected size of {expected_bucket_size}."
     assert(max_bucket_size <= (20. * expected_bucket_size));
     auto acc = 0;
-    for (int i = max_bucket_size; i >= 0; --i) {
+    for (int i = max_bucket_size; i > -1; i--) {
       auto tmp = bucket_len_cnt[i];
       bucket_len_cnt[i] = acc;
       acc += tmp;
     }
-    for (size_t b = 0; b < buckets_; ++b) {
+    for (size_t b = 0; b < buckets_; b++) {
       size_t l = bucket_starts[b + 1] - bucket_starts[b];
       order[bucket_len_cnt[l]] = b;
       bucket_len_cnt[l] += 1;
@@ -692,83 +795,18 @@ public:
     return {bucket_starts, order};
   }
 
-  constexpr size_t part(uint64_t hx) const { return hx % parts_; }
+  constexpr size_t part(uint64_t hx) const {
 
-  constexpr size_t bucket_in_part(uint64_t x) const { return x % buckets_; }
-
-  constexpr size_t bucket(uint64_t hx) const { return hx % buckets_total_; }
-};
-
-constexpr double constexpr_ln(double x) {
-  if (x <= 0.0)
-    return 0.0;
-
-  // Range reduction: bring x to [0.5, 2)
-  int k = 0;
-  while (x > 2.0) {
-    x *= 0.5;
-    ++k;
-  }
-  while (x < 0.5) {
-    x *= 2.0;
-    --k;
+    return (static_cast<__uint128_t>(ptrhash_config<n_>::parts) *
+            static_cast<__uint128_t>(hx)) >>
+           64;
   }
 
-  // ln(x) ≈ 2 * sum_{n=0}^∞ (1/(2n+1)) * ((x-1)/(x+1))^(2n+1)
-  const double y = (x - 1.0) / (x + 1.0);
-  const double y2 = y * y;
-
-  double term = y;
-  double sum = 0.0;
-
-  // 20 iterations ≈ double precision accuracy
-  for (int n = 1; n <= 39; n += 2) {
-    sum += term / n;
-    term *= y2;
+  constexpr size_t bucket(uint64_t hx) const {
+    return (static_cast<__uint128_t>(ptrhash_config<n_>::buckets_total) *
+            static_cast<__uint128_t>(hx)) >>
+           64;
   }
-
-  // ln(x) = 2 * sum + k * ln(2)
-  return 2.0 * sum + k * 0.693147180559945309417232121458176568;
-}
-
-template <typename T> constexpr T constexpr_ceil(T x) {
-  static_assert(std::is_floating_point_v<T>);
-  long long i = static_cast<long long>(x);
-  return (static_cast<T>(i) == x)
-             ? x
-             : (x > T{0} ? static_cast<T>(i + 1) : static_cast<T>(i));
-}
-
-LIBC_INLINE constexpr size_t get_parts(size_t n) {
-  size_t parts = 0;
-  auto eps = 0.01 / 2.0;
-  auto x = n * eps * eps / 2.0;
-  size_t target_parts = x / constexpr_ln(x);
-  auto parts_per_shard = target_parts / shards;
-  parts = ((parts_per_shard > 1) ? parts_per_shard : 1) * shards;
-  return parts;
-}
-
-LIBC_INLINE constexpr size_t get_slots_per_part(size_t keys_per_part) {
-  size_t slots_per_part = keys_per_part / 0.99;
-  if (is_power_of_two(slots_per_part)) {
-    slots_per_part += 1;
-  }
-  return slots_per_part;
-}
-
-template <size_t n> class ptrhash_config {
-public:
-  LIBC_INLINE_VAR static constexpr size_t parts = get_parts(n);
-  LIBC_INLINE_VAR static constexpr size_t keys_per_part = n / parts;
-  LIBC_INLINE_VAR static constexpr size_t parts_per_shard = parts / shards;
-  LIBC_INLINE_VAR static constexpr size_t slots_per_part =
-      get_slots_per_part(keys_per_part);
-  LIBC_INLINE_VAR static constexpr size_t slots_total = parts * slots_per_part;
-  LIBC_INLINE_VAR static constexpr size_t buckets_per_part =
-      constexpr_ceil(keys_per_part / 3.0) + 3;
-  LIBC_INLINE_VAR static constexpr size_t buckets_total =
-      parts * buckets_per_part;
 };
 
 template <size_t n, typename Key = uint64_t>
